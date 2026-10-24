@@ -1,0 +1,21 @@
+{
+  "name": "tuan04-sale-demo",
+  "version": "1.0.0",
+  "description": "Tabler + Express + PostgreSQL demo for Sale module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.2.1",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.13.0",
+    "xlsx": "^0.18.5"
+  }
+}

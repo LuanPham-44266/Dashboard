@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sale Orders - List View</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .app-header {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 12px 20px 0;
+      }
+
+      .user-header-box {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 999px;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+      }
+
+      .user-header-box .user-name {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #1f2937;
+      }
+
+      .user-header-box .logout-btn {
+        margin-left: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <header class="app-header">
+      <div class="user-header-box">
+        <span id="currentUserText" class="user-name">Xin chào</span>
+        <button id="logoutBtn" type="button" class="btn btn-outline-secondary btn-sm logout-btn">Logout</button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <div class="sale-app">
+        <div class="top-tabs">
+          <button class="tab-btn active" id="tab-orders" data-tab="orders">Orders</button>
+          <button class="tab-btn" id="tab-products" data-tab="products">Products</button>
+          <button class="tab-btn" id="tab-reporting" data-tab="reporting">Reporting</button>
+        </div>
+
+        <div id="ordersView" class="screen-view active">
+          <div class="page-toolbar">
+            <div class="toolbar-title-group">
+              <span class="toolbar-kicker">Sales</span>
+              <h1>Orders</h1>
+            </div>
+
+            <div class="toolbar-actions">
+              <button class="btn btn-dark" id="btn-new-order">New</button>
+              <button class="btn btn-secondary btn-soft" id="btn-import-order">Import</button>
+              <button class="btn btn-secondary btn-soft" id="btn-order-filters">Filters</button>
+            </div>
+          </div>
+
+          <div class="dashboard-stats" id="dashboardStats">
+            <div class="stat-card">
+              <span class="stat-label">Total Orders</span>
+              <strong class="stat-value" id="stat-total-orders">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Draft Quotes</span>
+              <strong class="stat-value" id="statDraftQuotes">0</strong>
+            </div>
+            <div class="stat-card accent" id="revenueStatCard" data-role-access="accounting">
+              <span class="stat-label">Total Revenue</span>
+              <strong class="stat-value" id="stat-total-revenue">0 đ</strong>
+            </div>
+          </div>
+
+          <div class="toolbar-search-row">
+            <div class="search-filter-group">
+              <div class="search-box">
+                <input type="text" placeholder="Search orders, customers..." id="searchInput" />
+              </div>
+              <div class="status-filter-box">
+                <select id="statusFilter">
+                  <option value="all">All Status</option>
+                  <option value="draft">Draft</option>
+                  <option value="sale">Sale</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+            </div>
+            <div class="toolbar-right-tools">
+              <button class="btn btn-outline-light" id="btn-reporting" type="button">Reporting</button>
+              <button class="btn btn-outline-light" id="btn-revenue" type="button">Revenue</button>
+              <button class="btn btn-primary-dark" id="btn-export" type="button">Export</button>
+            </div>
+          </div>
+
+          <div class="card sales-card">
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table sales-table" id="ordersTable">
+                  <thead>
+                    <tr>
+                      <th class="check-col"><input type="checkbox" /></th>
+                      <th class="sortable" data-sort="order_name">Order <span class="sort-indicator"></span></th>
+                      <th class="sortable" data-sort="customer_name">Customer <span class="sort-indicator"></span></th>
+                      <th>Phone</th>
+                      <th class="sortable" data-sort="date_order">Date <span class="sort-indicator"></span></th>
+                      <th>Status</th>
+                      <th>Items</th>
+                      <th class="sortable" data-sort="amount_total">Amount <span class="sort-indicator"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="ordersBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reportingView" class="screen-view hidden">
+          <div class="page-toolbar">
+            <div class="toolbar-title-group">
+              <span class="toolbar-kicker">Analytics</span>
+              <h1>Reporting / Revenue</h1>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn btn-primary-dark" id="btn-revenue-refresh" type="button">Refresh</button>
+            </div>
+          </div>
+
+          <div class="dashboard-stats" id="reportingStats">
+            <div class="stat-card accent">
+              <span class="stat-label">Total Revenue</span>
+              <strong class="stat-value" id="reportingTotalRevenue">0 đ</strong>
+            </div>
+          </div>
+
+          <div class="toolbar-search-row" style="margin-bottom: 16px;">
+            <div class="search-filter-group">
+              <div class="search-box">
+                <label for="reportingStartDate" class="form-label mb-0">From</label>
+                <input type="date" id="reportingStartDate" class="form-control" />
+              </div>
+              <div class="search-box">
+                <label for="reportingEndDate" class="form-label mb-0">To</label>
+                <input type="date" id="reportingEndDate" class="form-control" />
+              </div>
+              <div class="search-box">
+                <button class="btn btn-primary" id="btn-reporting-filter" type="button">Filter</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card sales-card">
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <!-- Bảng Reporting chuẩn -->
+                <table class="table table-vcenter card-table sales-table" id="reportingTable">
+                  <thead>
+                    <tr>
+                      <th>Order Ref</th>
+                      <th>Customer</th>
+                      <th>Order Date</th>
+                      <th>Status</th>
+                      <th class="text-end">Total Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportingBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+          <div class="dashboard-stats" id="reportingStats">
+            <div class="stat-card accent">
+              <span class="stat-label">Total Revenue</span>
+              <strong class="stat-value" id="reportingTotalRevenue">0 đ</strong>
+            </div>
+          </div>
+
+          <div class="toolbar-search-row" style="margin-bottom: 16px;">
+            <div class="search-filter-group">
+              <div class="search-box">
+                <label for="reportingStartDate" class="form-label mb-0">From</label>
+                <input type="date" id="reportingStartDate" class="form-control" />
+              </div>
+              <div class="search-box">
+                <label for="reportingEndDate" class="form-label mb-0">To</label>
+                <input type="date" id="reportingEndDate" class="form-control" />
+              </div>
+              <div class="search-box">
+                <button class="btn btn-primary" id="btn-reporting-filter" type="button">Filter</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card sales-card">
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table sales-table" id="reportingTable">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th>Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportingBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="productsView" class="screen-view hidden">
+          <div class="page-toolbar">
+            <div class="toolbar-title-group">
+              <span class="toolbar-kicker">Catalog</span>
+              <h1>Products</h1>
+            </div>
+
+            <div class="toolbar-actions">
+              <button class="btn btn-dark" id="btn-new-product">New Product</button>
+
+              <div class="custom-dropdown">
+                <button
+                  class="btn btn-secondary btn-soft dropdown-trigger dropdown-toggle"
+                  id="productDropdownTrigger"
+                  type="button"
+                  aria-expanded="false"
+                  data-bs-toggle="dropdown"
+                  aria-haspopup="true"
+                >
+                  More
+                </button>
+                <div class="custom-dropdown-menu hidden" id="productDropdownMenu">
+                  <a href="#" class="dropdown-item" id="btn-import-product">Import</a>
+                  <a href="#" class="dropdown-item" id="btn-export-product">Export</a>
+                </div>
+              </div>
+
+              <input type="file" id="file-import-input" accept=".xlsx, .xls" style="display: none;" />
+            </div>
+          </div>
+
+          <div class="card sales-card">
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table sales-table" id="productsTable">
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Unit Price</th>
+                      <th class="action-col">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="productsBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="productModal">
+      <div class="modal-panel modal-md">
+        <div class="modal-header">
+          <div>
+            <div class="modal-kicker">Catalog</div>
+            <h3 id="productModalTitle">Create Product</h3>
+          </div>
+          <button class="modal-close" id="closeProductModalBtn" aria-label="Close">×</button>
+        </div>
+
+        <div class="modal-body">
+          
+          <div class="form-grid stacked">
+            <div class="field-group">
+              <label for="productNameInput">Product Name</label>
+              <input type="text" id="productNameInput" placeholder="Enter product name" />
+            </div>
+            <div class="field-group">
+              <label for="productPriceInput">Price</label>
+              <input type="number" id="productPriceInput" min="0" step="0.01" placeholder="0" />
+            </div>
+          </div>
+
+          <div class="form-footer product-modal-actions">
+            <div></div>
+            <div class="action-group">
+              <button type="button" class="btn btn-secondary btn-soft" id="cancelProductModalBtn">Cancel</button>
+              <button type="button" class="btn btn-primary-dark" id="saveProductBtn">Save Product</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="orderModal">
+      <div class="modal-panel modal-lg">
+        <div class="modal-header">
+          <div>
+            <div class="modal-kicker">Sales</div>
+            <h3 id="modalTitle">Create Order</h3>
+          </div>
+          <button class="modal-close" id="closeModalBtn" aria-label="Close">×</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="status-pipeline" id="statusPipeline" aria-label="Order status pipeline">
+            <div class="pipeline-step active" data-state="draft">Draft</div>
+            <div class="pipeline-step" data-state="sale">Sale</div>
+            <div class="pipeline-step" data-state="done">Done</div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field-group w-50">
+              <label for="customerSelect">Customer</label>
+              <input type="text" id="customerSelect" list="customer-list" placeholder="Chọn hoặc nhập tên khách hàng..." />
+              <datalist id="customer-list"></datalist>
+            </div>
+            <div class="field-group w-50">
+              <label for="orderDate">Order Date</label>
+              <input type="datetime-local" id="orderDate" />
+            </div>
+          </div>
+
+          <div class="order-lines-block">
+            <div class="section-header">
+              <h4>Order Lines</h4>
+              <button type="button" class="btn btn-secondary btn-soft" id="addLineBtn">Add a line</button>
+            </div>
+
+            <div class="lines-table-wrap">
+              <table class="lines-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="orderLinesBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <div class="totals-box">
+              <div class="total-row">
+                <span>Untaxed</span>
+                <strong id="amountUntaxed">0₫</strong>
+              </div>
+              <div class="total-row total-strong">
+                <span>Total</span>
+                <strong id="amountTotal">0₫</strong>
+              </div>
+            </div>
+
+            <div class="action-group">
+              <button type="button" class="btn btn-secondary btn-soft hidden" id="btn-send-quote">Gửi mail báo giá</button>
+              <button type="button" class="btn btn-primary-dark hidden" id="btn-export-invoice">Xuất hóa đơn</button>
+              <button type="button" class="btn btn-secondary btn-soft" id="cancelModalBtn">Cancel</button>
+              <button type="button" class="btn btn-primary-dark" id="confirmOrderBtn">Create Order</button>
+              <button type="button" class="btn btn-success hidden" id="confirmSaleBtn">Confirm Order</button>
+              <button type="button" class="btn btn-success hidden" id="markDoneBtn">Mark as Done</button>
+              <button type="button" class="btn btn-primary-dark hidden" id="saveChangesBtn">Save Changes</button>
+              <button type="button" class="btn btn-danger hidden" id="deleteOrderBtn">Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+  </body>
+</html>

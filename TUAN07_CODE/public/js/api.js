@@ -1,0 +1,342 @@
+(function () {
+  function getAuthHeaders(extraHeaders = {}) {
+    const token = window.Auth?.getToken?.() || '';
+    return {
+      ...extraHeaders,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }
+
+  async function fetchCustomers() {
+    try {
+      const response = await fetch('/api/customers', {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải danh sách khách hàng.');
+      }
+
+      return Array.isArray(payload) ? payload : payload.data || [];
+    } catch (error) {
+      console.error('fetchCustomers failed:', error);
+      throw error;
+    }
+  }
+
+  async function fetchProducts() {
+    try {
+      const response = await fetch('/api/products', {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => []);
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải danh sách sản phẩm.');
+      }
+
+      return Array.isArray(payload) ? payload : payload.data || [];
+    } catch (error) {
+      console.error('fetchProducts failed:', error);
+      throw error;
+    }
+  }
+
+  async function updateProduct(productId, productPayload = {}) {
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(productPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể cập nhật sản phẩm.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('updateProduct failed:', error);
+      throw error;
+    }
+  }
+
+  async function deleteProduct(productId) {
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể xóa sản phẩm.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('deleteProduct failed:', error);
+      throw error;
+    }
+  }
+
+  async function fetchOrders(params = {}) {
+    try {
+      const query = new URLSearchParams({
+        search: params.search || '',
+        status: params.status || 'all',
+        sortBy: params.sortBy || 'date_order',
+        order: params.order || 'desc',
+      });
+
+      const response = await fetch(`/api/orders?${query.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải danh sách đơn hàng.');
+      }
+
+      return Array.isArray(payload) ? payload : payload.data || [];
+    } catch (error) {
+      console.error('fetchOrders failed:', error);
+      throw error;
+    }
+  }
+
+  async function createProduct(productPayload = {}) {
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(productPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tạo sản phẩm.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('createProduct failed:', error);
+      throw error;
+    }
+  }
+
+  async function createOrder(orderPayload = {}) {
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(orderPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tạo đơn hàng.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('createOrder failed:', error);
+      throw error;
+    }
+  }
+
+  async function updateOrderStatus(orderId, statusPayload = {}) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(statusPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể cập nhật trạng thái đơn hàng.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('updateOrderStatus failed:', error);
+      throw error;
+    }
+  }
+
+  async function createQuote(quotePayload = {}) {
+    try {
+      const response = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(quotePayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tạo báo giá.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('createQuote failed:', error);
+      throw error;
+    }
+  }
+
+  async function updateQuote(quoteId, quotePayload = {}) {
+    try {
+      const response = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(quotePayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể cập nhật báo giá.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('updateQuote failed:', error);
+      throw error;
+    }
+  }
+
+  async function fetchRevenueReport() {
+    try {
+      const response = await fetch('/api/reports/revenue', {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải báo cáo doanh thu.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('fetchRevenueReport failed:', error);
+      throw error;
+    }
+  }
+
+  async function exportInvoice(orderId) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/invoice/export`, {
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Không thể xuất hóa đơn PDF.');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice-${orderId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      return { ok: true, orderId };
+    } catch (error) {
+      console.error('exportInvoice failed:', error);
+      throw error;
+    }
+  }
+
+  async function sendQuoteEmail(quoteId, email = '') {
+    try {
+      const response = await fetch(`/api/quotes/${quoteId}/send-email`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ customer_email: email }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || 'Không thể gửi báo giá.');
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('sendQuoteEmail failed:', error);
+      throw error;
+    }
+  }
+
+  async function fetchOrderDetails(orderId) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/details`, {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải chi tiết đơn hàng.');
+      }
+
+      return payload?.order || payload?.data || payload || {};
+    } catch (error) {
+      console.error('fetchOrderDetails failed:', error);
+      throw error;
+    }
+  }
+
+  async function fetchRevenueData(startDate = '', endDate = '') {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const response = await fetch(`/api/reports/revenue${query}`, {
+        headers: getAuthHeaders(),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể tải dữ liệu doanh thu.');
+      }
+
+      if (payload && Array.isArray(payload.data)) {
+        return payload;
+      }
+
+      if (Array.isArray(payload)) {
+        return { total_revenue: payload.reduce((sum, item) => sum + Number(item?.amount_total ?? item?.total_revenue ?? 0), 0), data: payload };
+      }
+
+      return { total_revenue: 0, data: [] };
+    } catch (error) {
+      console.error('fetchRevenueData failed:', error);
+      throw error;
+    }
+  }
+
+  window.Api = {
+    fetchCustomers,
+    fetchProducts,
+    updateProduct,
+    deleteProduct,
+    fetchOrders,
+    createProduct,
+    createOrder,
+    updateOrderStatus,
+    createQuote,
+    updateQuote,
+    fetchRevenueReport,
+    fetchRevenueData,
+    exportInvoice,
+    sendQuoteEmail,
+    fetchOrderDetails,
+  };
+})();

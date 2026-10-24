@@ -10,5 +10,6 @@
 	},
 	"explorerExclude.backup": {},
 	"typescript.tsdk": "preview/node_modules/typescript/lib",
-	"typescript.enablePromptUseWorkspaceTsdk": true
+	"typescript.enablePromptUseWorkspaceTsdk": true,
+	"inlineChat.defaultModel": "Claude Sonnet 5.5 (claude-code)"
 }

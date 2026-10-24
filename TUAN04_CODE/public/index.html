@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sale Orders - List View</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="sale-app">
+        <div class="page-toolbar">
+          <div class="toolbar-title-group">
+            <span class="toolbar-kicker">Sales</span>
+            <h1>Orders</h1>
+          </div>
+
+          <div class="toolbar-actions">
+            <button class="btn btn-dark">New</button>
+            <button class="btn btn-secondary btn-soft">Import</button>
+            <button class="btn btn-secondary btn-soft">Filters</button>
+          </div>
+        </div>
+
+        <div class="toolbar-search-row">
+          <div class="search-box">
+            <input type="text" placeholder="Search orders, customers..." id="searchInput" />
+          </div>
+          <div class="toolbar-right-tools">
+            <button class="btn btn-outline-light">Action</button>
+            <button class="btn btn-primary-dark">Export</button>
+          </div>
+        </div>
+
+        <div class="card sales-card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-vcenter card-table sales-table" id="ordersTable">
+                <thead>
+                  <tr>
+                    <th class="check-col"><input type="checkbox" /></th>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Phone</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                    <th>Items</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="ordersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const stateMap = {
+        draft: { label: 'Draft', className: 'badge-soft' },
+        sale: { label: 'Sale', className: 'badge-primary' },
+        done: { label: 'Done', className: 'badge-success' },
+        sent: { label: 'Sent', className: 'badge-info' },
+        cancel: { label: 'Cancel', className: 'badge-danger' },
+      };
+
+      async function loadOrders() {
+        const tableBody = document.getElementById('ordersBody');
+        const input = document.getElementById('searchInput');
+
+        try {
+          const response = await fetch('/api/orders');
+          if (!response.ok) throw new Error('Failed to fetch orders');
+
+          const data = await response.json();
+
+          renderOrders(data, input.value.trim());
+
+          input.addEventListener('input', (event) => {
+            renderOrders(data, event.target.value.trim());
+          });
+        } catch (error) {
+          console.error(error);
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="8" class="empty-row">Unable to load data from API</td>
+            </tr>
+          `;
+        }
+      }
+
+      function renderOrders(data, keyword = '') {
+        const tableBody = document.getElementById('ordersBody');
+
+        const filtered = data.filter((order) => {
+          if (!keyword) return true;
+          const text = [
+            order.order_name,
+            order.customer_name,
+            order.phone,
+            order.email,
+            order.state,
+          ]
+            .join(' ')
+            .toLowerCase();
+          return text.includes(keyword.toLowerCase());
+        });
+
+        if (!filtered.length) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="8" class="empty-row">No records found</td>
+            </tr>
+          `;
+          return;
+        }
+
+        tableBody.innerHTML = filtered.map((order) => {
+          const state = stateMap[order.state] || { label: order.state, className: 'badge-soft' };
+          const formattedTotal = Number(order.amount_total).toLocaleString('vi-VN', {
+            style: 'currency',
+            currency: 'VND',
+          });
+          const formattedDate = new Date(order.date_order).toLocaleString('vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
+          return `
+            <tr>
+              <td class="check-col"><input type="checkbox" /></td>
+              <td><strong>${order.order_name}</strong></td>
+              <td>${order.customer_name}</td>
+              <td>${order.phone || '-'}</td>
+              <td>${formattedDate}</td>
+              <td><span class="badge ${state.className}">${state.label}</span></td>
+              <td>${Number(order.item_count || 0)}</td>
+              <td class="amount-col">${formattedTotal}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      loadOrders();
+    </script>
+  </body>
+</html>
