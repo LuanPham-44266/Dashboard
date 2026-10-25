@@ -6,10 +6,9 @@ async function seedDatabase() {
   try {
     await client.query('BEGIN');
 
+    await client.query('DELETE FROM account_move');
     await client.query('DELETE FROM sale_order_line');
     await client.query('DELETE FROM sale_order');
-    await client.query('DELETE FROM quote_item');
-    await client.query('DELETE FROM quote');
     await client.query('DELETE FROM product_product');
     await client.query('DELETE FROM res_partner');
 
@@ -69,8 +68,7 @@ async function seedDatabase() {
       {
         name: 'SO-2026-001',
         partner_id: customers[0].id,
-        order_status: 'Pending',
-        invoice_status: 'Unpaid',
+        state: 'draft',
         amount_untaxed: 24990000,
         amount_total: 24990000,
         date_order: '2026-10-01T09:15:00',
@@ -78,8 +76,7 @@ async function seedDatabase() {
       {
         name: 'SO-2026-002',
         partner_id: customers[1].id,
-        order_status: 'Processing',
-        invoice_status: 'Unpaid',
+        state: 'sale',
         amount_untaxed: 9980000,
         amount_total: 9980000,
         date_order: '2026-10-03T10:00:00',
@@ -87,8 +84,7 @@ async function seedDatabase() {
       {
         name: 'SO-2026-003',
         partner_id: customers[2].id,
-        order_status: 'Done',
-        invoice_status: 'Paid',
+        state: 'done',
         amount_untaxed: 18460000,
         amount_total: 18460000,
         date_order: '2026-10-05T14:20:00',
@@ -96,8 +92,7 @@ async function seedDatabase() {
       {
         name: 'SO-2026-004',
         partner_id: customers[3].id,
-        order_status: 'Pending',
-        invoice_status: 'Paid',
+        state: 'draft',
         amount_untaxed: 6990000,
         amount_total: 6990000,
         date_order: '2026-10-08T08:45:00',
@@ -105,8 +100,7 @@ async function seedDatabase() {
       {
         name: 'SO-2026-005',
         partner_id: customers[4].id,
-        order_status: 'Canceled',
-        invoice_status: 'Unpaid',
+        state: 'cancel',
         amount_untaxed: 3890000,
         amount_total: 3890000,
         date_order: '2026-10-10T16:30:00',
@@ -115,13 +109,13 @@ async function seedDatabase() {
 
     const orderInsertValues = orders
       .map((_, index) => {
-        const offset = index * 8;
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`;
+        const offset = index * 7;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`;
       })
       .join(', ');
 
     const orderRows = await client.query(
-      `INSERT INTO sale_order (name, partner_id, created_by, date_order, order_status, invoice_status, amount_untaxed, amount_total)
+      `INSERT INTO sale_order (name, partner_id, created_by, date_order, state, amount_untaxed, amount_total)
        VALUES ${orderInsertValues}
        RETURNING id, name`,
       orders.flatMap((order) => [
@@ -129,8 +123,7 @@ async function seedDatabase() {
         order.partner_id,
         createdBy,
         order.date_order,
-        order.order_status,
-        order.invoice_status,
+        order.state,
         order.amount_untaxed,
         order.amount_total,
       ])

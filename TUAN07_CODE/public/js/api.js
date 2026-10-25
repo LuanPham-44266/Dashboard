@@ -167,46 +167,6 @@
     }
   }
 
-  async function createQuote(quotePayload = {}) {
-    try {
-      const response = await fetch('/api/quotes', {
-        method: 'POST',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(quotePayload),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.message || 'Không thể tạo báo giá.');
-      }
-
-      return payload;
-    } catch (error) {
-      console.error('createQuote failed:', error);
-      throw error;
-    }
-  }
-
-  async function updateQuote(quoteId, quotePayload = {}) {
-    try {
-      const response = await fetch(`/api/quotes/${quoteId}`, {
-        method: 'PUT',
-        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify(quotePayload),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.message || 'Không thể cập nhật báo giá.');
-      }
-
-      return payload;
-    } catch (error) {
-      console.error('updateQuote failed:', error);
-      throw error;
-    }
-  }
-
   async function fetchRevenueReport() {
     try {
       const response = await fetch('/api/reports/revenue', {
@@ -253,12 +213,12 @@
     }
   }
 
-  async function sendQuoteEmail(quoteId, email = '') {
+  async function sendQuoteEmail(orderId, email = '') {
     try {
-      const response = await fetch(`/api/quotes/${quoteId}/send-email`, {
+      const response = await fetch('/api/send-quote-email', {
         method: 'POST',
         headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ customer_email: email }),
+        body: JSON.stringify({ orderId, email }),
       });
 
       if (!response.ok) {
@@ -322,6 +282,68 @@
     }
   }
 
+  async function deleteOrder(orderId) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể xóa đơn hàng.');
+      }
+      return payload;
+    } catch (error) {
+      console.error('deleteOrder failed:', error);
+      throw error;
+    }
+  }
+
+async function createInvoice(orderId) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}/create-invoice`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Không thể tạo hóa đơn.');
+      return payload;
+    } catch (error) {
+      console.error('createInvoice failed:', error);
+      throw error;
+    }
+  }
+
+  async function confirmInvoice(invoiceId) {
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/confirm`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Không thể xác nhận hóa đơn.');
+      return payload;
+    } catch (error) {
+      console.error('confirmInvoice failed:', error);
+      throw error;
+    }
+  }
+
+  async function payInvoice(invoiceId) {
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/payment`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Không thể thanh toán hóa đơn.');
+      return payload;
+    } catch (error) {
+      console.error('payInvoice failed:', error);
+      throw error;
+    }
+  }
+
   window.Api = {
     fetchCustomers,
     fetchProducts,
@@ -331,12 +353,11 @@
     createProduct,
     createOrder,
     updateOrderStatus,
-    createQuote,
-    updateQuote,
     fetchRevenueReport,
     fetchRevenueData,
     exportInvoice,
     sendQuoteEmail,
     fetchOrderDetails,
+    deleteOrder,
   };
 })();

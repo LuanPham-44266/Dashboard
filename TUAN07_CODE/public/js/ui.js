@@ -1,12 +1,9 @@
 (function () {
   const ORDER_STATE_LABELS = {
     draft: 'Draft',
-    pending: 'Draft',
     sale: 'Sale',
-    processing: 'Sale',
     done: 'Done',
-    canceled: 'Canceled',
-    cancelled: 'Canceled',
+    cancel: 'Canceled'
   };
 
   const ROLE_RULES = {
@@ -117,44 +114,63 @@
     }
   }
 
-  function toggleOrderModalState(status, isNew = false) {
-    const confirmOrderBtn = document.getElementById('confirmOrderBtn'); // Nút Create Order
-    const confirmSaleBtn = document.getElementById('confirmSaleBtn'); // Nút Confirm Order
-    const markDoneBtn = document.getElementById('markDoneBtn'); // Nút Mark as Done
-    const addLineBtn = document.getElementById('addLineBtn'); // Nút Add a line
-    
+  function toggleOrderModalState(status, isNew = false, invoiceState = null) {
+    const confirmOrderBtn = document.getElementById('confirmOrderBtn'); 
+    const confirmSaleBtn = document.getElementById('confirmSaleBtn'); 
+    const markDoneBtn = document.getElementById('markDoneBtn'); 
+    const addLineBtn = document.getElementById('addLineBtn'); 
+    const btnSendQuote = document.getElementById('btn-send-quote');
+    const deleteOrderBtn = document.getElementById('deleteOrderBtn');
+
+    // Nút Invoice mới
+    const createInvoiceBtn = document.getElementById('btn-create-invoice');
+    const confirmInvoiceBtn = document.getElementById('btn-confirm-invoice');
+    const registerPaymentBtn = document.getElementById('btn-register-payment');
+
     const normalizedStatus = String(status || 'draft').toLowerCase();
 
     // 1. Ẩn tất cả nút trước
     if (confirmOrderBtn) confirmOrderBtn.classList.add('hidden');
     if (confirmSaleBtn) confirmSaleBtn.classList.add('hidden');
     if (markDoneBtn) markDoneBtn.classList.add('hidden');
+    if (btnSendQuote) btnSendQuote.classList.add('hidden');
+    if (deleteOrderBtn) deleteOrderBtn.classList.add('hidden');
     if (addLineBtn) addLineBtn.classList.remove('hidden');
 
-    // 2. Khóa form nếu là Sale, Done hoặc Canceled
-    // Draft vẫn được mở để chỉnh sửa
+    if (createInvoiceBtn) createInvoiceBtn.classList.add('hidden');
+    if (confirmInvoiceBtn) confirmInvoiceBtn.classList.add('hidden');
+    if (registerPaymentBtn) registerPaymentBtn.classList.add('hidden');
+
     const isReadOnly = (normalizedStatus === 'done' || normalizedStatus === 'sale' || normalizedStatus === 'processing' || normalizedStatus === 'canceled');
     document.querySelectorAll('#orderModal input, #orderModal select').forEach(el => {
       el.disabled = isReadOnly;
     });
 
-    // 3. Hiển thị nút bấm chính xác theo trạng thái
+    // 2. Hiển thị nút theo trạng thái (Luồng Odoo)
     if (isNew) {
-      // Đơn tạo mới -> Hiện Create Order
       if (confirmOrderBtn) confirmOrderBtn.classList.remove('hidden');
     } else {
-      // Đơn cũ
       if (normalizedStatus === 'draft' || normalizedStatus === 'pending') {
-        // Đang nháp -> Hiện Confirm Order
         if (confirmSaleBtn) confirmSaleBtn.classList.remove('hidden');
+        if (btnSendQuote) btnSendQuote.classList.remove('hidden');
+        if (deleteOrderBtn) deleteOrderBtn.classList.remove('hidden');
       } 
-      else if (normalizedStatus === 'sale' || normalizedStatus === 'processing') {
-        // Đã bán -> Hiện Mark as Done và khóa Add line
-        if (markDoneBtn) markDoneBtn.classList.remove('hidden');
+      else if (normalizedStatus === 'sale' || normalizedStatus === 'processing' || normalizedStatus === 'done') {
+        if (normalizedStatus === 'sale' || normalizedStatus === 'processing') {
+           if (markDoneBtn) markDoneBtn.classList.remove('hidden');
+        }
         if (addLineBtn) addLineBtn.classList.add('hidden'); 
+        
+        // Logic Hóa đơn:
+        if (!invoiceState) {
+           if (createInvoiceBtn) createInvoiceBtn.classList.remove('hidden');
+        } else if (invoiceState === 'draft') {
+           if (confirmInvoiceBtn) confirmInvoiceBtn.classList.remove('hidden');
+        } else if (invoiceState === 'posted') {
+           if (registerPaymentBtn) registerPaymentBtn.classList.remove('hidden');
+        }
       } 
       else {
-        // Done / Canceled -> Khóa hoàn toàn Add line
         if (addLineBtn) addLineBtn.classList.add('hidden');
       }
     }
@@ -175,9 +191,9 @@
       bindOrderDetailEvents();
     }
     
-    // Bổ sung: Khởi tạo nút cho đơn nháp mới
     toggleOrderModalState('draft', true);
   }
+  
   function createOrderRow(products = state.products) {
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -297,16 +313,15 @@
       const customerSelect = document.getElementById('customerSelect');
       const customerInputValue = customerSelect ? String(customerSelect.value).trim() : '';
       
-      // Tìm xem có khớp với khách hàng cũ không
       const matchedCustomer = state.customers.find(c => c.name === customerInputValue);
       const partnerId = matchedCustomer ? Number(matchedCustomer.id) : 0;
-      const partnerName = matchedCustomer ? '' : customerInputValue; // Gửi tên lên nếu là KH mới
+      const partnerName = matchedCustomer ? '' : customerInputValue;
 
       const orderDateEl = document.getElementById('orderDate');
       const dateOrder = orderDateEl && orderDateEl.value ? new Date(orderDateEl.value).toISOString() : new Date().toISOString();
       const lines = getOrderLinesFromTable();
 
-      if (!partnerId) {
+      if (!partnerId && !partnerName) {
         showToast('Vui lòng chọn khách hàng.', 'error');
         return;
       }
@@ -318,7 +333,7 @@
 
       const payload = {
         partner_id: partnerId,
-        partner_name: partnerName, // Bổ sung trường tên
+        partner_name: partnerName,
         date_order: dateOrder,
         lines: lines.map((line) => ({
           product_id: Number(line.product_id),
@@ -328,7 +343,14 @@
       };
 
       const result = await window.Api.createOrder(payload);
-      showToast(result?.message || 'Tạo đơn hàng thành công.', 'success');
+      showToast(result?.message || 'Đã lưu đơn nháp thành công.', 'success');
+      
+      refreshOrdersList();
+      if (typeof loadReportingData === 'function') await loadReportingData();
+
+      if (result.order && result.order.id) {
+        openOrderDetail(result.order.id);
+      }
       const orderModal = document.getElementById('orderModal');
       if (orderModal) orderModal.classList.add('hidden');
       const refreshedOrders = await window.Api?.fetchOrders?.({
@@ -587,28 +609,25 @@
 
   function getStatusBadgeClass(statusValue) {
     const value = String(statusValue || '').toLowerCase();
-    if (['done', 'paid'].includes(value)) return 'bg-success';
-    if (['sale', 'processing'].includes(value)) return 'bg-primary';
-    if (['draft', 'pending'].includes(value)) return 'bg-secondary';
-    if (['canceled', 'cancelled'].includes(value)) return 'bg-danger';
+    if (value === 'done') return 'bg-success';
+    if (value === 'sale') return 'bg-primary';
+    if (value === 'draft') return 'bg-secondary';
+    if (value === 'cancel') return 'bg-danger';
     return 'bg-secondary';
   }
 
   function calculateAndRenderStats(orders = []) {
     try {
-      const validOrders = Array.isArray(orders)
-        ? orders.filter((order) => {
-            const stateValue = String(order?.state || order?.order_status || '').toLowerCase();
-            const invoiceStatus = String(order?.invoice_status || '').toLowerCase();
-            const isDone = stateValue === 'done' || stateValue === 'paid';
-            const isPaid = invoiceStatus === 'paid';
-            const amount = Number(order?.amount_total ?? order?.amount ?? 0);
-            return isDone || isPaid || (Number.isFinite(amount) && amount > 0 && (stateValue === 'done' || stateValue === 'sale'));
-          })
-        : [];
+      const orderList = Array.isArray(orders) ? orders : [];
+      
+      const draftOrders = orderList.filter(o => String(o?.state || '').toLowerCase() === 'draft');
+      const revenueOrders = orderList.filter((order) => {
+        const stateValue = String(order?.state || '').toLowerCase();
+        return stateValue === 'done' || stateValue === 'sale';
+      });
 
-      const totalOrders = validOrders.length;
-      const totalRevenue = validOrders.reduce((sum, order) => {
+      const totalOrders = orderList.length;
+      const totalRevenue = revenueOrders.reduce((sum, order) => {
         const rawAmount = Number(order?.amount_total ?? order?.amount ?? 0);
         return sum + (Number.isFinite(rawAmount) ? rawAmount : 0);
       }, 0);
@@ -616,17 +635,22 @@
       const totalOrdersEl = document.getElementById('stat-total-orders');
       if (totalOrdersEl) totalOrdersEl.innerText = String(totalOrders);
 
+      const draftQuotesEl = document.getElementById('stat-draft-quotes');
+      if (draftQuotesEl) draftQuotesEl.innerText = String(draftOrders.length);
+
       const totalRevenueEl = document.getElementById('stat-total-revenue');
       if (totalRevenueEl) totalRevenueEl.innerText = formatShortMoney(totalRevenue);
 
       const reportingTotalEl = document.getElementById('reportingTotalRevenue');
       if (reportingTotalEl) reportingTotalEl.innerText = formatMoney(totalRevenue);
 
-      return { totalOrders, totalRevenue, validOrders };
+      return { totalOrders, totalRevenue, validOrders: revenueOrders };
     } catch (error) {
       console.error('calculateAndRenderStats failed:', error);
       const fallbackOrderEl = document.getElementById('stat-total-orders');
       if (fallbackOrderEl) fallbackOrderEl.innerText = '0';
+      const draftQuotesEl = document.getElementById('stat-draft-quotes');
+      if (draftQuotesEl) draftQuotesEl.innerText = '0';
       const fallbackRevenueEl = document.getElementById('stat-total-revenue');
       if (fallbackRevenueEl) fallbackRevenueEl.innerText = '0đ';
       const reportingTotalEl = document.getElementById('reportingTotalRevenue');
@@ -644,7 +668,7 @@
 
     try {
       const orders = window.Api?.fetchRevenueData ? await window.Api.fetchRevenueData() : [];
-      calculateAndRenderStats(orders);
+      calculateAndRenderStats(Array.isArray(orders?.data) ? orders.data : orders);
     } catch (error) {
       console.error('Failed to hydrate revenue stats', error);
       if (totalOrdersEl) totalOrdersEl.innerText = '0';
@@ -709,7 +733,12 @@
     try {
       const report = await window.Api?.fetchRevenueData?.(state.reportingStartDate, state.reportingEndDate);
       const rows = Array.isArray(report) ? report : Array.isArray(report?.data) ? report.data : [];
-      const totalRevenue = rows.reduce((sum, item) => sum + Number(item?.amount_total ?? item?.total_revenue ?? 0), 0);
+      const revenueRows = rows.filter(item => {
+        const itemState = String(item.state || '').toLowerCase();
+        return itemState === 'sale' || itemState === 'done';
+      });
+      const totalRevenue = revenueRows.reduce((sum, item) => sum + Number(item?.amount_total ?? item?.amount ?? 0), 0);
+      
       renderRevenueReport({ total_revenue: totalRevenue, data: rows });
       calculateAndRenderStats(rows);
       return { total_revenue: totalRevenue, data: rows };
@@ -734,7 +763,6 @@
 
       const customerSelect = document.getElementById('customerSelect');
       if (customerSelect) {
-        // Cập nhật để hỗ trợ Datalist hiển thị tên
         customerSelect.value = orderPayload.customer_name || orderPayload.partner_name || orderPayload.partner_id || '';
       }
 
@@ -771,8 +799,9 @@
       if (modalTitle) modalTitle.textContent = 'Edit Order';
       updateTotals();
       
-      // Bổ sung: Ẩn/hiện nút dựa theo trạng thái đơn hàng
-      toggleOrderModalState(orderPayload.order_status || orderPayload.state || 'draft', false);
+      // Lấy trạng thái hóa đơn từ dữ liệu trả về (nếu có)
+      const invoiceState = orderPayload.invoice_state || null;
+      toggleOrderModalState(orderPayload.state || 'draft', false, invoiceState);
     } catch (error) {
       console.error('openOrderDetail failed:', error);
       showToast(error?.message || 'Không thể tải chi tiết đơn hàng.', 'error');
@@ -798,8 +827,8 @@
         .map((order) => {
           const orderName = order?.order_name || order?.name || 'Order';
           const customerName = order?.customer_name || order?.partner_name || 'Khách lẻ';
-          const statusValue = order?.order_status || order?.state || 'draft';
-          const statusLabel = ORDER_STATE_LABELS[String(statusValue).toLowerCase()] || String(statusValue || 'Draft');
+          const statusValue = String(order?.state || 'draft').toLowerCase();
+          const statusLabel = ORDER_STATE_LABELS[statusValue] || 'Draft';
           const amount = Number(order?.amount_total ?? order?.amount ?? 0);
           const itemCount = Number(order?.item_count ?? 0);
           const orderId = Number(order?.id || 0);
@@ -839,7 +868,7 @@
 
   function handleReporting() {
     setTabActive('tab-reporting');
-    loadReportingData(); // Chỉ gọi API lấy dữ liệu, tuyệt đối không ghi đè HTML
+    loadReportingData(); 
   }
 
   function handleExport() {
@@ -924,7 +953,12 @@
             return true;
           });
 
-          const totalRevenue = filteredRows.reduce((sum, item) => sum + Number(item?.amount_total ?? item?.total_revenue ?? 0), 0);
+          const revenueRows = filteredRows.filter(i => {
+              const s = String(i.state || '').toLowerCase();
+              return s === 'sale' || s === 'done';
+          });
+          const totalRevenue = revenueRows.reduce((sum, item) => sum + Number(item?.amount_total ?? item?.amount ?? 0), 0);
+          
           renderRevenueReport({ total_revenue: totalRevenue, data: filteredRows });
           calculateAndRenderStats(filteredRows);
           showToast('Đã lọc báo cáo theo khoảng thời gian.', 'success');
@@ -1054,23 +1088,32 @@
 
     const btnSendQuote = document.getElementById('btn-send-quote');
     if (btnSendQuote) {
-      btnSendQuote.addEventListener('click', async () => {
+      const newSendBtn = btnSendQuote.cloneNode(true);
+      btnSendQuote.parentNode.replaceChild(newSendBtn, btnSendQuote);
+      
+      newSendBtn.addEventListener('click', async () => {
         if (!state.selectedOrderId) return;
+        
+        const email = prompt("Nhập email khách hàng để gửi báo giá:");
+        if (!email) return; 
+        
         try {
-          const response = await window.Api?.sendQuoteEmail?.(state.selectedOrderId, '');
-          showToast(response?.message || 'Gửi báo giá thành công.', 'success');
+          showToast('Đang gửi email, vui lòng đợi...', 'success');
+          const response = await window.Api?.sendQuoteEmail?.(state.selectedOrderId, email);
+          showToast(response?.message || 'Đã gửi email báo giá thành công.', 'success');
         } catch (error) {
-          showToast(error?.message || 'Không thể gửi báo giá.', 'error');
+          showToast(error?.message || 'Không thể gửi email.', 'error');
         }
       });
-      // KÍCH HOẠT NÚT ĐÓNG MODAL
+    }
+
     document.querySelectorAll('.modal-close').forEach(btn => {
       btn.addEventListener('click', function() {
         const modal = this.closest('.modal-overlay');
         if (modal) modal.classList.add('hidden');
       });
     });
-
+  
     const cancelModalBtn = document.getElementById('cancelModalBtn');
     if (cancelModalBtn) {
       cancelModalBtn.addEventListener('click', () => {
@@ -1079,13 +1122,11 @@
       });
     }
 
-    // KÍCH HOẠT NÚT CREATE ORDER
     const confirmOrderBtn = document.getElementById('confirmOrderBtn');
     if (confirmOrderBtn) {
       confirmOrderBtn.addEventListener('click', handleCreateOrderFromModal);
     }
-    }
-
+    
     const btnExportInvoice = document.getElementById('btn-export-invoice');
     if (btnExportInvoice) {
       btnExportInvoice.addEventListener('click', async () => {
@@ -1207,10 +1248,9 @@
     bindManualDropdowns();
     attachProductDropdownHandlers();
     bindReportingDateFilters();
-    // 1. Nút Add a line
+
     const addLineBtn = document.getElementById('addLineBtn');
     if (addLineBtn) {
-      // Kỹ thuật cloneNode giúp xóa bỏ mọi sự kiện rác bị dính trước đó
       const newAddBtn = addLineBtn.cloneNode(true);
       addLineBtn.parentNode.replaceChild(newAddBtn, addLineBtn);
       newAddBtn.addEventListener('click', () => {
@@ -1222,7 +1262,6 @@
       });
     }
 
-    // 2. Nút Confirm Order (Draft -> Sale)
     const confirmSaleBtn = document.getElementById('confirmSaleBtn');
     if (confirmSaleBtn) {
       const newConfirmBtn = confirmSaleBtn.cloneNode(true);
@@ -1230,18 +1269,16 @@
       newConfirmBtn.addEventListener('click', async () => {
         if (!state.selectedOrderId) return;
         try {
-          // Gọi API chuyển trạng thái sang Sale
-          await window.Api?.updateOrderStatus?.(state.selectedOrderId, { state: 'Sale' });
+          await window.Api?.updateOrderStatus?.(state.selectedOrderId, { state: 'sale' });
           showToast('Xác nhận đơn hàng thành công.', 'success');
           document.getElementById('orderModal')?.classList.add('hidden');
-          refreshOrdersList(); // Tải lại danh sách ngoài màn hình
+          refreshOrdersList(); 
         } catch (error) {
           showToast(error?.message || 'Không thể xác nhận đơn hàng.', 'error');
         }
       });
     }
 
-    // 3. Nút Mark as Done (Sale -> Done)
     const markDoneBtn = document.getElementById('markDoneBtn');
     if (markDoneBtn) {
       const newMarkBtn = markDoneBtn.cloneNode(true);
@@ -1249,15 +1286,104 @@
       newMarkBtn.addEventListener('click', async () => {
         if (!state.selectedOrderId) return;
         try {
-          // Gọi API chuyển trạng thái sang Done
-          await window.Api?.updateOrderStatus?.(state.selectedOrderId, { state: 'Done' });
+          await window.Api?.updateOrderStatus?.(state.selectedOrderId, { state: 'done' });
           showToast('Đã đánh dấu hoàn thành.', 'success');
           document.getElementById('orderModal')?.classList.add('hidden');
           refreshOrdersList();
-          // Cập nhật lại số liệu Revenue nếu có
           if (typeof loadReportingData === 'function') loadReportingData(); 
         } catch (error) {
           showToast(error?.message || 'Không thể hoàn thành đơn.', 'error');
+        }
+      });
+    }
+  
+    const deleteOrderBtn = document.getElementById('deleteOrderBtn');
+    if (deleteOrderBtn) {
+      const newDeleteBtn = deleteOrderBtn.cloneNode(true);
+      deleteOrderBtn.parentNode.replaceChild(newDeleteBtn, deleteOrderBtn);
+      newDeleteBtn.addEventListener('click', async () => {
+        if (!state.selectedOrderId) return;
+        const confirmed = window.confirm('Bạn có chắc muốn xóa đơn hàng này không?');
+        if (!confirmed) return;
+        try {
+          await window.Api?.deleteOrder?.(state.selectedOrderId);
+          showToast('Đã xóa đơn hàng thành công.', 'success');
+          document.getElementById('orderModal')?.classList.add('hidden');
+          refreshOrdersList();
+          if (typeof loadReportingData === 'function') loadReportingData();
+        } catch (error) {
+          showToast(error?.message || 'Không thể xóa đơn hàng.', 'error');
+        }
+      });
+    }
+    // --- MODULE HÓA ĐƠN ---
+    const btnCreateInvoice = document.getElementById('btn-create-invoice');
+    if (btnCreateInvoice) {
+      const newBtn = btnCreateInvoice.cloneNode(true);
+      btnCreateInvoice.parentNode.replaceChild(newBtn, btnCreateInvoice);
+      newBtn.addEventListener('click', async () => {
+        if (!state.selectedOrderId) return;
+        try {
+          const res = await window.Api?.createInvoice?.(state.selectedOrderId);
+          showToast(res?.message || 'Tạo hóa đơn nháp thành công.', 'success');
+          
+          // Lưu tạm ID hóa đơn vào state để dùng cho các bước sau
+          if (res?.invoice?.id) {
+             state.currentInvoiceId = res.invoice.id;
+             // Cập nhật lại UI modal (mô phỏng việc đổi state)
+             orderPayload = { state: 'sale', invoice_state: 'draft' }; // Giả lập dữ liệu
+             toggleOrderModalState('sale', false, 'draft');
+          }
+          
+          refreshOrdersList();
+        } catch (error) {
+          showToast(error?.message || 'Không thể tạo hóa đơn.', 'error');
+        }
+      });
+    }
+
+    const btnConfirmInvoice = document.getElementById('btn-confirm-invoice');
+    if (btnConfirmInvoice) {
+      const newBtn = btnConfirmInvoice.cloneNode(true);
+      btnConfirmInvoice.parentNode.replaceChild(newBtn, btnConfirmInvoice);
+      newBtn.addEventListener('click', async () => {
+        const invoiceId = state.currentInvoiceId; 
+        if (!invoiceId) {
+            showToast('Không tìm thấy mã hóa đơn trong phiên làm việc.', 'error');
+            return;
+        }
+        try {
+          const res = await window.Api?.confirmInvoice?.(invoiceId);
+          showToast(res?.message || 'Xác nhận hóa đơn thành công.', 'success');
+          
+          // Giả lập UI cập nhật
+          toggleOrderModalState('sale', false, 'posted');
+        } catch (error) {
+          showToast(error?.message || 'Không thể xác nhận hóa đơn.', 'error');
+        }
+      });
+    }
+
+    const btnRegisterPayment = document.getElementById('btn-register-payment');
+    if (btnRegisterPayment) {
+      const newBtn = btnRegisterPayment.cloneNode(true);
+      btnRegisterPayment.parentNode.replaceChild(newBtn, btnRegisterPayment);
+      newBtn.addEventListener('click', async () => {
+        const invoiceId = state.currentInvoiceId;
+        if (!invoiceId) {
+            showToast('Không tìm thấy mã hóa đơn.', 'error');
+            return;
+        }
+        try {
+          const res = await window.Api?.payInvoice?.(invoiceId);
+          showToast(res?.message || 'Thanh toán hóa đơn thành công.', 'success');
+          
+          // Đóng modal hoặc ẩn hẳn các nút sau khi thanh toán xong
+          toggleOrderModalState('done', false, 'paid'); 
+          
+          if (typeof loadReportingData === 'function') loadReportingData(); 
+        } catch (error) {
+          showToast(error?.message || 'Không thể thanh toán hóa đơn.', 'error');
         }
       });
     }
@@ -1304,7 +1430,6 @@
   function renderRevenueReport(report = {}) {
     try {
       const rows = Array.isArray(report?.data) ? report.data : [];
-      // Sửa lại logic tính tổng để lấy trường amount_total hoặc amount
       const totalValue = Number(report.total_revenue ?? rows.reduce((sum, item) => sum + Number(item.amount_total || item.amount || 0), 0));
       
       const body = document.getElementById('reportingBody');
@@ -1317,16 +1442,14 @@
       if (!body) return;
 
       if (!rows.length) {
-        // Đổi colspan="2" thành colspan="5" để khớp 5 cột
         body.innerHTML = '<tr><td colspan="5" class="empty-row text-center p-4">Không có dữ liệu doanh thu trong thời gian này.</td></tr>';
         return;
       }
 
       body.innerHTML = rows
         .map((item) => {
-          // Lấy status và badge
-          const stateValue = item.state || item.order_status || 'done';
-          const statusLabel = ORDER_STATE_LABELS[String(stateValue).toLowerCase()] || String(stateValue);
+          const stateValue = String(item.state || 'draft').toLowerCase();
+          const statusLabel = ORDER_STATE_LABELS[stateValue] || 'Draft';
           const statusClass = getStatusBadgeClass(stateValue);
           
           return `

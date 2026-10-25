@@ -1,3 +1,4 @@
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -19,7 +20,7 @@ const ORDER_SORT_FIELDS = {
   customer_name: 'rp.name',
   date_order: 'so.date_order',
   amount_total: 'so.amount_total',
-  state: 'so.order_status',
+  state: 'so.state',
 };
 
 const upload = multer({
@@ -94,28 +95,6 @@ function toNumber(value, defaultValue = 0) {
   return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-function normalizeOrderStatus(value) {
-  const rawState = String(value || '').trim();
-  const normalized = rawState.toLowerCase();
-
-  const legacyMap = {
-    draft: 'Pending',
-    sale: 'Processing',
-    done: 'Done',
-    cancel: 'Canceled',
-    pending: 'Pending',
-    processing: 'Processing',
-    canceled: 'Canceled',
-    cancelled: 'Canceled',
-  };
-
-  if (legacyMap[normalized]) {
-    return legacyMap[normalized];
-  }
-
-  return rawState || 'Pending';
-}
-
 function normalizeState(value) {
   const state = String(value || '').trim().toLowerCase();
   const legacyMap = {
@@ -158,7 +137,6 @@ function validateOrderLine(line, lineIndex = 0) {
 }
 
 function validateOrderPayload(payload) {
-  // Sửa điều kiện: Báo lỗi khi KHÔNG CÓ ID khách cũ VÀ CŨNG KHÔNG CÓ tên khách mới
   if (!payload || (!Number(payload.partner_id) && !payload.partner_name)) {
     return 'Vui lòng chọn hoặc nhập tên khách hàng hợp lệ.';
   }
@@ -176,6 +154,7 @@ function validateOrderPayload(payload) {
 
   return null;
 }
+
 async function generateOrderName(client = null) {
   const runner = client || { query: (text, params) => query(text, params) };
   const result = await runner.query(`
@@ -207,7 +186,7 @@ async function getOrderSummary(orderId) {
     SELECT
       so.id,
       so.name AS order_name,
-      so.order_status,
+      so.state,
       so.date_order,
       so.amount_untaxed,
       so.amount_total,
@@ -223,7 +202,7 @@ async function getOrderSummary(orderId) {
     GROUP BY
       so.id,
       so.name,
-      so.order_status,
+      so.state,
       so.date_order,
       so.amount_untaxed,
       so.amount_total,
@@ -419,9 +398,9 @@ app.get('/api/orders', authRole(['Sale', 'Accountant', 'Manager']), async (req, 
     }
 
     if (statusFilter && statusFilter !== 'all') {
-      const normalizedStatus = normalizeOrderStatus(statusFilter);
+      const normalizedStatus = normalizeState(statusFilter);
       params.push(normalizedStatus);
-      whereClauses.push(`so.order_status = $${params.length}`);
+      whereClauses.push(`so.state = $${params.length}`);
     }
 
     const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -430,7 +409,7 @@ app.get('/api/orders', authRole(['Sale', 'Accountant', 'Manager']), async (req, 
       SELECT
         so.id,
         so.name AS order_name,
-        so.order_status AS state,
+        so.state,
         so.date_order,
         so.amount_untaxed,
         so.amount_total,
@@ -446,7 +425,7 @@ app.get('/api/orders', authRole(['Sale', 'Accountant', 'Manager']), async (req, 
       GROUP BY
         so.id,
         so.name,
-        so.order_status,
+        so.state,
         so.date_order,
         so.amount_untaxed,
         so.amount_total,
@@ -517,7 +496,6 @@ app.post('/api/orders', authRole(['Sale', 'Manager']), async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // UPSERT KHÁCH HÀNG: Nếu không có ID nhưng có tên, tạo mới
     if (!Number(partner_id) && partner_name) {
       const trimmedName = String(partner_name).trim();
       const insertCustomer = await client.query(
@@ -530,9 +508,9 @@ app.post('/api/orders', authRole(['Sale', 'Manager']), async (req, res) => {
     const orderName = await generateOrderName(client);
     const orderInsert = await client.query(
       `
-        INSERT INTO sale_order (name, partner_id, order_status, date_order, amount_untaxed, amount_total)
-        VALUES ($1, $2, 'Pending', NOW(), 0, 0)
-        RETURNING id, name, partner_id, order_status, amount_untaxed, amount_total;
+        INSERT INTO sale_order (name, partner_id, state, date_order, amount_untaxed, amount_total)
+        VALUES ($1, $2, 'draft', NOW(), 0, 0)
+        RETURNING id, name, partner_id, state, amount_untaxed, amount_total;
       `,
       [orderName, Number(partner_id)]
     );
@@ -598,8 +576,8 @@ app.get('/api/orders/summary', authRole(['Accountant', 'Manager']), async (req, 
     const result = await query(`
       SELECT
         COUNT(*)::int AS total_orders,
-        COUNT(*) FILTER (WHERE order_status = 'Pending')::int AS draft_quotes,
-        COALESCE(SUM(CASE WHEN order_status IN ('Processing', 'Done') THEN amount_total ELSE 0 END), 0)::numeric AS total_revenue
+        COUNT(*) FILTER (WHERE state = 'draft')::int AS draft_quotes,
+        COALESCE(SUM(CASE WHEN state IN ('sale', 'done') THEN amount_total ELSE 0 END), 0)::numeric AS total_revenue
       FROM sale_order;
     `);
 
@@ -626,15 +604,15 @@ app.get('/api/orders/summary', authRole(['Accountant', 'Manager']), async (req, 
 app.put('/api/orders/:id/status', authRole(['Sale', 'Manager']), async (req, res) => {
   const { id } = req.params;
   const { state } = req.body;
-  const nextOrderStatus = normalizeOrderStatus(state);
+  const nextState = normalizeState(state);
 
-  if (!['Pending', 'Processing', 'Done', 'Canceled'].includes(nextOrderStatus)) {
+  if (!ORDER_STATES.includes(nextState)) {
     return res.status(400).json({ message: 'Trạng thái không hợp lệ.' });
   }
 
   try {
     const existingOrder = await query(
-      `SELECT id, order_status FROM sale_order WHERE id = $1;`,
+      `SELECT id, state FROM sale_order WHERE id = $1;`,
       [id]
     );
 
@@ -643,22 +621,22 @@ app.put('/api/orders/:id/status', authRole(['Sale', 'Manager']), async (req, res
     }
 
     const allowedTransitions = {
-      Pending: ['Processing', 'Canceled'],
-      Processing: ['Done', 'Canceled', 'Pending'],
-      Done: ['Done'],
-      Canceled: ['Pending'],
+      draft: ['sale', 'cancel'],
+      sale: ['done', 'cancel', 'draft'],
+      done: ['done'],
+      cancel: ['draft'],
     };
 
-    const currentStatus = existingOrder.rows[0].order_status;
-    const transitionList = allowedTransitions[currentStatus] || [currentStatus];
+    const currentState = existingOrder.rows[0].state;
+    const transitionList = allowedTransitions[currentState] || [currentState];
 
-    if (!transitionList.includes(nextOrderStatus)) {
+    if (!transitionList.includes(nextState)) {
       return res.status(400).json({
-        message: `Không thể chuyển từ trạng thái '${currentStatus}' sang '${nextOrderStatus}'.`,
+        message: `Không thể chuyển từ trạng thái '${currentState}' sang '${nextState}'.`,
       });
     }
 
-    if (nextOrderStatus === 'Processing') {
+    if (nextState === 'sale') {
       const linesResult = await query(
         `SELECT COUNT(*)::int AS line_count FROM sale_order_line WHERE order_id = $1;`,
         [id]
@@ -675,13 +653,9 @@ app.put('/api/orders/:id/status', authRole(['Sale', 'Manager']), async (req, res
       await client.query('BEGIN');
 
       await client.query(
-        `UPDATE sale_order SET order_status = $1 WHERE id = $2;`,
-        [nextOrderStatus, id]
+        `UPDATE sale_order SET state = $1 WHERE id = $2;`,
+        [nextState, id]
       );
-
-      if (nextOrderStatus === 'Done') {
-        await finalizeOrderDone(id, client);
-      }
 
       await client.query('COMMIT');
     } catch (error) {
@@ -715,7 +689,7 @@ app.put('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) => {
     await client.query('BEGIN');
 
     const orderResult = await client.query(
-      `SELECT id, partner_id, order_status, amount_total FROM sale_order WHERE id = $1;`,
+      `SELECT id, partner_id, state, amount_total FROM sale_order WHERE id = $1;`,
       [id]
     );
 
@@ -725,12 +699,12 @@ app.put('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) => {
 
     const currentOrder = orderResult.rows[0];
     const nextPartnerId = partner_id !== undefined ? Number(partner_id) : currentOrder.partner_id;
-    const nextOrderStatus = state ? normalizeOrderStatus(state) : currentOrder.order_status;
+    const nextState = state ? normalizeState(state) : currentOrder.state;
 
-    if (currentOrder.order_status !== 'Pending') {
+    if (currentOrder.state !== 'draft') {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        message: 'Backend không cho phép UPDATE/DELETE nội dung khi đơn hàng không ở trạng thái Pending.',
+        message: 'Backend không cho phép UPDATE/DELETE nội dung khi đơn hàng không ở trạng thái Draft.',
       });
     }
 
@@ -781,12 +755,12 @@ app.put('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) => {
       `
         UPDATE sale_order
         SET partner_id = $1,
-            order_status = $2,
+            state = $2,
             amount_untaxed = $3,
             amount_total = $4
         WHERE id = $5;
       `,
-      [nextPartnerId, nextOrderStatus, roundedTotal, roundedTotal, id]
+      [nextPartnerId, nextState, roundedTotal, roundedTotal, id]
     );
 
     await client.query('COMMIT');
@@ -817,7 +791,7 @@ app.delete('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) =>
     await client.query('BEGIN');
 
     const existing = await client.query(
-      `SELECT id, order_status FROM sale_order WHERE id = $1;`,
+      `SELECT id, state FROM sale_order WHERE id = $1;`,
       [id]
     );
 
@@ -826,10 +800,10 @@ app.delete('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) =>
       return res.status(404).json({ message: 'Không tìm thấy đơn hàng.' });
     }
 
-    if (existing.rows[0].order_status !== 'Pending') {
+    if (existing.rows[0].state !== 'draft') {
       await client.query('ROLLBACK');
       return res.status(400).json({
-        message: 'Backend không cho phép UPDATE/DELETE nội dung khi đơn hàng không ở trạng thái Pending.',
+        message: 'Backend không cho phép UPDATE/DELETE nội dung khi đơn hàng không ở trạng thái Draft.',
       });
     }
 
@@ -850,221 +824,6 @@ app.delete('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) =>
   }
 });
 
-app.put('/api/orders/:id/invoice-status', authRole(['Accountant', 'Manager']), async (req, res) => {
-  const { id } = req.params;
-  const { invoice_status } = req.body || {};
-  const allowedStates = ['Unpaid', 'Partial', 'Paid', 'Refunded'];
-
-  if (!allowedStates.includes(invoice_status)) {
-    return res.status(400).json({ message: 'invoice_status không hợp lệ.' });
-  }
-
-  try {
-    const existingOrder = await query(
-      `SELECT id, invoice_status FROM sale_order WHERE id = $1;`,
-      [id]
-    );
-
-    if (!existingOrder.rows[0]) {
-      return res.status(404).json({ message: 'Không tìm thấy đơn hàng.' });
-    }
-
-    await query(
-      `UPDATE sale_order SET invoice_status = $1 WHERE id = $2;`,
-      [invoice_status, id]
-    );
-
-    const summary = await getOrderSummary(id);
-    return res.json({
-      message: 'Cập nhật invoice_status thành công',
-      order: summary.order,
-    });
-  } catch (error) {
-    console.error('Error updating invoice status:', error);
-    return res.status(500).json({ message: 'Lỗi cập nhật invoice_status', error: error.message });
-  }
-});
-
-app.post('/api/quotes', authRole(['Sale', 'Manager']), async (req, res) => {
-  try {
-    const { customer_id, quote_number, valid_until, notes, items = [] } = req.body || {};
-
-    if (!customer_id) {
-      return res.status(400).json({ message: 'Thiếu khách hàng cho báo giá.' });
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const quoteInsert = await client.query(
-        `
-          INSERT INTO quote (quote_number, customer_id, created_by, quote_status, valid_until, notes, subtotal, discount_amount, tax_amount, total_amount)
-          VALUES ($1, $2, $3, 'Draft', $4, $5, 0, 0, 0, 0)
-          RETURNING id;
-        `,
-        [quote_number || `Q-${Date.now()}`, Number(customer_id), req.user?.id || 1, valid_until || null, notes || null]
-      );
-
-      const quoteId = quoteInsert.rows[0].id;
-      let subtotal = 0;
-
-      for (const item of items) {
-        const quantity = Number(item.quantity || 0);
-        const unitPrice = Number(item.unit_price || 0);
-        const lineTotal = quantity * unitPrice;
-        subtotal += lineTotal;
-
-        await client.query(
-          `
-            INSERT INTO quote_item (quote_id, product_name, description, quantity, unit_price, line_total)
-            VALUES ($1, $2, $3, $4, $5, $6);
-          `,
-          [quoteId, item.product_name, item.description || '', quantity, unitPrice, lineTotal]
-        );
-      }
-
-      await client.query(
-        `
-          UPDATE quote
-          SET subtotal = $1, total_amount = $1
-          WHERE id = $2;
-        `,
-        [subtotal, quoteId]
-      );
-
-      await client.query('COMMIT');
-      return res.status(201).json({ message: 'Tạo báo giá thành công', quote_id: quoteId });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Error creating quote:', error);
-    return res.status(500).json({ message: 'Lỗi khi tạo báo giá', error: error.message });
-  }
-});
-
-app.put('/api/quotes/:id', authRole(['Sale', 'Manager']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { customer_id, quote_status, valid_until, notes, items = [] } = req.body || {};
-
-    if (!customer_id) {
-      return res.status(400).json({ message: 'Thiếu khách hàng cho báo giá.' });
-    }
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      await client.query(
-        `
-          UPDATE quote
-          SET customer_id = $1,
-              quote_status = COALESCE($2, quote_status),
-              valid_until = $3,
-              notes = $4,
-              updated_at = NOW()
-          WHERE id = $5;
-        `,
-        [Number(customer_id), quote_status || null, valid_until || null, notes || null, Number(id)]
-      );
-
-      await client.query(`DELETE FROM quote_item WHERE quote_id = $1;`, [Number(id)]);
-
-      let subtotal = 0;
-      for (const item of items) {
-        const quantity = Number(item.quantity || 0);
-        const unitPrice = Number(item.unit_price || 0);
-        const lineTotal = quantity * unitPrice;
-        subtotal += lineTotal;
-
-        await client.query(
-          `
-            INSERT INTO quote_item (quote_id, product_name, description, quantity, unit_price, line_total)
-            VALUES ($1, $2, $3, $4, $5, $6);
-          `,
-          [Number(id), item.product_name, item.description || '', quantity, unitPrice, lineTotal]
-        );
-      }
-
-      await client.query(
-        `
-          UPDATE quote
-          SET subtotal = $1,
-              total_amount = $1,
-              updated_at = NOW()
-          WHERE id = $2;
-        `,
-        [subtotal, Number(id)]
-      );
-
-      await client.query('COMMIT');
-      return res.json({ message: 'Cập nhật báo giá thành công' });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Error updating quote:', error);
-    return res.status(500).json({ message: 'Lỗi khi cập nhật báo giá', error: error.message });
-  }
-});
-
-async function finalizeOrderDone(orderId, client = query) {
-  const orderResult = await client.query(
-    `
-      SELECT id, quote_id, invoice_status, order_status
-      FROM sale_order
-      WHERE id = $1;
-    `,
-    [orderId]
-  );
-
-  if (!orderResult.rows[0]) {
-    return null;
-  }
-
-  const currentOrder = orderResult.rows[0];
-
-  if (currentOrder.order_status !== 'Done') {
-    return currentOrder;
-  }
-
-  if (currentOrder.invoice_status === 'Unpaid' || currentOrder.invoice_status === 'Partial') {
-    await client.query(
-      `
-        UPDATE sale_order
-        SET invoice_status = 'Paid'
-        WHERE id = $1;
-      `,
-      [orderId]
-    );
-  }
-
-  if (currentOrder.quote_id) {
-    await client.query(
-      `
-        UPDATE quote
-        SET quote_status = 'Accepted'
-        WHERE id = $1 AND quote_status IN ('Draft', 'Sent');
-      `,
-      [currentOrder.quote_id]
-    );
-  }
-
-  return {
-    ...currentOrder,
-    invoice_status: 'Paid',
-    trigger: 'order_done_finalized',
-  };
-}
-
 app.post('/api/send-quote-email', authRole(['Sale', 'Manager']), async (req, res) => {
   const { orderId, email } = req.body || {};
 
@@ -1078,27 +837,6 @@ app.post('/api/send-quote-email', authRole(['Sale', 'Manager']), async (req, res
   } catch (error) {
     console.error('Error sending quote email:', error);
     return res.status(500).json({ message: 'Lỗi khi gửi email báo giá', error: error.message });
-  }
-});
-
-app.post('/api/quotes/:id/send-email', authRole(['Sale', 'Manager']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { customer_email } = req.body || {};
-
-    const result = await sendQuoteEmail(Number(id), customer_email);
-
-    return res.json({
-      success: true,
-      message: 'Gửi email báo giá thành công.',
-      data: result,
-    });
-  } catch (error) {
-    console.error('Error sending quote email:', error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Lỗi khi gửi email báo giá.',
-    });
   }
 });
 
@@ -1121,6 +859,51 @@ app.get('/api/orders/:id/invoice/export', authRole(['Accountant', 'Manager']), a
 
 app.get('/api/reports/revenue', authRole(['Accountant', 'Manager']), getRevenueReport);
 
+// --- MODULE HÓA ĐƠN (ACCOUNT_MOVE) ---
+
+app.post('/api/orders/:id/create-invoice', authRole(['Accountant', 'Manager']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const orderResult = await query(`SELECT name, partner_id, amount_total FROM sale_order WHERE id = $1`, [id]);
+    if (!orderResult.rows[0]) return res.status(404).json({ message: 'Không tìm thấy đơn hàng' });
+    
+    const order = orderResult.rows[0];
+    const invoiceName = `INV-${order.name}`;
+    
+    const insertResult = await query(
+      `INSERT INTO account_move (partner_id, invoice_origin, name, state, amount_total) 
+       VALUES ($1, $2, $3, 'draft', $4) RETURNING *`,
+      [order.partner_id, order.name, invoiceName, order.amount_total]
+    );
+    
+    return res.status(201).json({ message: 'Tạo hóa đơn nháp thành công', invoice: insertResult.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi khi tạo hóa đơn', error: error.message });
+  }
+});
+
+app.put('/api/invoices/:id/confirm', authRole(['Accountant', 'Manager']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(`UPDATE account_move SET state = 'posted' WHERE id = $1 RETURNING *`, [id]);
+    if (!result.rows[0]) return res.status(404).json({ message: 'Không tìm thấy hóa đơn' });
+    return res.json({ message: 'Đã vào sổ hóa đơn (posted)', invoice: result.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi khi xác nhận hóa đơn', error: error.message });
+  }
+});
+
+app.put('/api/invoices/:id/payment', authRole(['Accountant', 'Manager']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(`UPDATE account_move SET state = 'paid' WHERE id = $1 RETURNING *`, [id]);
+    if (!result.rows[0]) return res.status(404).json({ message: 'Không tìm thấy hóa đơn' });
+    return res.json({ message: 'Đã thanh toán hóa đơn (paid)', invoice: result.rows[0] });
+  } catch (error) {
+    return res.status(500).json({ message: 'Lỗi khi thanh toán hóa đơn', error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });

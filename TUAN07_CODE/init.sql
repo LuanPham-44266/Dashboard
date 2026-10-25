@@ -1,7 +1,6 @@
+DROP TABLE IF EXISTS account_move;
 DROP TABLE IF EXISTS sale_order_line;
 DROP TABLE IF EXISTS sale_order;
-DROP TABLE IF EXISTS quote_item;
-DROP TABLE IF EXISTS quote;
 DROP TABLE IF EXISTS product_product;
 DROP TABLE IF EXISTS res_partner;
 DROP TABLE IF EXISTS users;
@@ -31,44 +30,14 @@ CREATE TABLE product_product (
     list_price NUMERIC(15,2) NOT NULL DEFAULT 0
 );
 
-CREATE TABLE quote (
-    id SERIAL PRIMARY KEY,
-    quote_number VARCHAR(100) NOT NULL UNIQUE,
-    customer_id INT NOT NULL,
-    created_by INT NOT NULL,
-    quote_status VARCHAR(30) NOT NULL DEFAULT 'Draft'
-        CHECK (quote_status IN ('Draft', 'Sent', 'Accepted', 'Rejected', 'Expired')),
-    valid_until DATE,
-    notes TEXT,
-    subtotal NUMERIC(15,2) NOT NULL DEFAULT 0,
-    discount_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
-    tax_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
-    total_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_quote_customer
-        FOREIGN KEY (customer_id)
-        REFERENCES res_partner(id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT,
-    CONSTRAINT fk_quote_user
-        FOREIGN KEY (created_by)
-        REFERENCES users(id)
-        ON UPDATE CASCADE
-        ON DELETE RESTRICT
-);
-
 CREATE TABLE sale_order (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     partner_id INT NOT NULL,
-    quote_id INT,
     created_by INT,
     date_order TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    order_status VARCHAR(30) NOT NULL DEFAULT 'Pending'
-        CHECK (order_status IN ('Pending', 'Processing', 'Done', 'Canceled')),
-    invoice_status VARCHAR(30) NOT NULL DEFAULT 'Unpaid'
-        CHECK (invoice_status IN ('Unpaid', 'Partial', 'Paid', 'Refunded')),
+    state VARCHAR(50) NOT NULL DEFAULT 'draft'
+        CHECK (state IN ('draft', 'sale', 'done', 'cancel')),
     amount_untaxed NUMERIC(15,2) NOT NULL DEFAULT 0,
     amount_total NUMERIC(15,2) NOT NULL DEFAULT 0,
     CONSTRAINT fk_sale_order_partner
@@ -76,11 +45,6 @@ CREATE TABLE sale_order (
         REFERENCES res_partner(id)
         ON UPDATE CASCADE
         ON DELETE RESTRICT,
-    CONSTRAINT fk_sale_order_quote
-        FOREIGN KEY (quote_id)
-        REFERENCES quote(id)
-        ON UPDATE CASCADE
-        ON DELETE SET NULL,
     CONSTRAINT fk_sale_order_user
         FOREIGN KEY (created_by)
         REFERENCES users(id)
@@ -107,19 +71,18 @@ CREATE TABLE sale_order_line (
         ON DELETE RESTRICT
 );
 
-CREATE TABLE quote_item (
+CREATE TABLE account_move (
     id SERIAL PRIMARY KEY,
-    quote_id INT NOT NULL,
-    product_name VARCHAR(255) NOT NULL,
-    description TEXT,
-    quantity NUMERIC(15,2) NOT NULL DEFAULT 1,
-    unit_price NUMERIC(15,2) NOT NULL DEFAULT 0,
-    line_total NUMERIC(15,2) NOT NULL DEFAULT 0,
-    CONSTRAINT fk_quote_item_quote
-        FOREIGN KEY (quote_id)
-        REFERENCES quote(id)
+    partner_id INT NOT NULL,
+    invoice_origin VARCHAR(100),
+    name VARCHAR(100) UNIQUE,
+    state VARCHAR(50) DEFAULT 'draft' CHECK (state IN ('draft', 'posted', 'paid', 'cancel')),
+    amount_total NUMERIC(15,2),
+    CONSTRAINT fk_account_move_partner
+        FOREIGN KEY (partner_id)
+        REFERENCES res_partner(id)
         ON UPDATE CASCADE
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
 );
 
 INSERT INTO users (username, email, password_hash, full_name, role) VALUES
@@ -146,17 +109,12 @@ INSERT INTO product_product (name, list_price) VALUES
 ('Webcam Logitech C920', 2490000.00),
 ('Router WiFi TP-Link', 1290000.00);
 
-INSERT INTO quote (quote_number, customer_id, created_by, quote_status, valid_until, notes, subtotal, discount_amount, tax_amount, total_amount)
-VALUES
-('Q-2024-001', 1, 1, 'Accepted', '2024-02-10', 'Quote cho khách hàng Nguyễn Văn An', 24990000.00, 0, 0, 24990000.00),
-('Q-2024-002', 2, 1, 'Sent', '2024-02-15', 'Quote cho khách hàng Trần Thị Bình', 12580000.00, 500000.00, 0, 12080000.00);
-
-INSERT INTO sale_order (name, partner_id, quote_id, created_by, date_order, order_status, invoice_status, amount_untaxed, amount_total) VALUES
-('SO-2024-001', 1, 1, 1, '2024-01-10 09:15:00', 'Pending', 'Unpaid', 24990000.00, 27489000.00),
-('SO-2024-002', 2, 2, 1, '2024-01-12 10:00:00', 'Processing', 'Partial', 12580000.00, 13838000.00),
-('SO-2024-003', 3, NULL, 1, '2024-01-20 14:20:00', 'Done', 'Paid', 18460000.00, 20206000.00),
-('SO-2024-004', 4, NULL, 1, '2024-02-03 11:10:00', 'Processing', 'Unpaid', 9200000.00, 10120000.00),
-('SO-2024-005', 5, NULL, 1, '2024-02-15 16:45:00', 'Canceled', 'Refunded', 13830000.00, 15213000.00);
+INSERT INTO sale_order (name, partner_id, created_by, date_order, state, amount_untaxed, amount_total) VALUES
+('SO-2024-001', 1, 1, '2024-01-10 09:15:00', 'draft', 24990000.00, 27489000.00),
+('SO-2024-002', 2, 1, '2024-01-12 10:00:00', 'sale', 12580000.00, 13838000.00),
+('SO-2024-003', 3, 1, '2024-01-20 14:20:00', 'done', 18460000.00, 20206000.00),
+('SO-2024-004', 4, 1, '2024-02-03 11:10:00', 'sale', 9200000.00, 10120000.00),
+('SO-2024-005', 5, 1, '2024-02-15 16:45:00', 'cancel', 13830000.00, 15213000.00);
 
 INSERT INTO sale_order_line (order_id, product_id, product_uom_qty, price_unit, price_subtotal) VALUES
 (1, 1, 1, 24990000.00, 24990000.00),
@@ -172,12 +130,6 @@ INSERT INTO sale_order_line (order_id, product_id, product_uom_qty, price_unit, 
 (5, 1, 1, 24990000.00, 24990000.00),
 (5, 3, 1, 6990000.00, 6990000.00),
 (5, 6, 2, 990000.00, 1980000.00);
-
-INSERT INTO quote_item (quote_id, product_name, description, quantity, unit_price, line_total) VALUES
-(1, 'Laptop Dell XPS 13', 'Laptop doanh nhân', 1, 24990000.00, 24990000.00),
-(2, 'Monitor LG 27 inch', 'Màn hình máy tính', 1, 6990000.00, 6990000.00),
-(2, 'Chuột Logitech MX Master', 'Chuột không dây', 1, 2990000.00, 2990000.00);
-
 
 --update user
 UPDATE users
