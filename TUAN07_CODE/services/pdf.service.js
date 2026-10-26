@@ -4,21 +4,18 @@ const { query } = require('../db');
 async function getOrderInvoiceData(orderId) {
   const orderResult = await query(
     `
-      SELECT
-        so.id,
-        so.name AS order_name,
-        so.date_order,
-        so.order_status,
-        so.invoice_status,
-        so.amount_untaxed,
-        so.amount_total,
-        rp.name AS customer_name,
-        rp.email AS customer_email,
-        rp.phone AS customer_phone,
-        q.quote_number
-      FROM sale_order so
-      LEFT JOIN res_partner rp ON rp.id = so.partner_id
-      LEFT JOIN quote q ON q.id = so.quote_id
+      SELECT so.id, so.name AS order_name, 
+      so.date_order, 
+      so.amount_untaxed, 
+      so.amount_total, 
+      rp.name AS customer_name, 
+      rp.email AS customer_email, 
+      rp.phone AS customer_phone, 
+      am.name AS invoice_name, 
+      am.state AS invoice_status, 
+      am.created_at AS invoice_date 
+      FROM sale_order so LEFT JOIN res_partner rp ON rp.id = so.partner_id 
+      LEFT JOIN account_move am ON am.invoice_origin = so.name 
       WHERE so.id = $1;
     `,
     [orderId]
@@ -66,13 +63,12 @@ async function generateInvoicePDF(orderId) {
   doc.fontSize(20).text('HÓA ĐƠN BÁN HÀNG', { align: 'center' });
   doc.moveDown();
 
-  doc.fontSize(12).text(`Mã đơn hàng: ${order.order_name}`);
-  doc.text(`Ngày: ${new Date(order.date_order).toLocaleString('vi-VN')}`);
+  doc.fontSize(12).text(`Số Hóa Đơn: ${order.invoice_name || 'Hóa đơn Nháp'}`);
+  doc.text(`Mã đơn bán (Tham chiếu): ${order.order_name}`);
+  doc.text(`Ngày xuất HĐ: ${order.invoice_date ? new Date(order.invoice_date).toLocaleString('vi-VN') : '-'}`);
   doc.text(`Khách hàng: ${order.customer_name || 'Khách hàng'}`);
-  doc.text(`Email: ${order.customer_email || '-'}`);
   doc.text(`Điện thoại: ${order.customer_phone || '-'}`);
-  doc.text(`Trạng thái thanh toán: ${order.invoice_status || 'Unpaid'}`);
-  doc.text(`Số báo giá: ${order.quote_number || '-'}`);
+  doc.text(`Trạng thái Hóa đơn: ${order.invoice_status || 'Chưa tạo'}`);
   doc.moveDown();
 
   doc.fontSize(12).text('Chi tiết sản phẩm:');

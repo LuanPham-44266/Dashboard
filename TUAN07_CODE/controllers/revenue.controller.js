@@ -4,7 +4,7 @@ async function getRevenueReport(req, res) {
   try {
     const startDate = String(req.query.startDate || '').trim();
     const endDate = String(req.query.endDate || '').trim();
-    const whereClauses = ['invoice_status = \'Paid\''];
+    const whereClauses = ["state IN ('sale', 'done')"];
     const params = [];
 
     if (startDate) {
@@ -19,29 +19,18 @@ async function getRevenueReport(req, res) {
 
     const result = await query(
       `
-        SELECT
-          TO_CHAR(DATE_TRUNC('month', date_order), 'YYYY-MM') AS month,
-          SUM(amount_total)::numeric AS total_revenue
-        FROM sale_order
-        WHERE ${whereClauses.join(' AND ')}
-        GROUP BY DATE_TRUNC('month', date_order)
-        ORDER BY DATE_TRUNC('month', date_order) ASC;
+        SELECT so.id, so.name AS order_name, rp.name AS customer_name, so.date_order, so.state, so.amount_total 
+        FROM sale_order so 
+        LEFT JOIN res_partner rp ON rp.id = so.partner_id 
+        WHERE ${whereClauses.join(' AND ')} 
+        ORDER BY so.date_order DESC;
       `,
       params
     );
 
-    const chartData = (result.rows || []).map((row) => ({
-      month: row.month,
-      total_revenue: Number(row.total_revenue || 0),
-    }));
-
-    const totalRevenue = chartData.reduce((sum, item) => sum + item.total_revenue, 0);
-
-    return res.json({
-      success: true,
-      total_revenue: totalRevenue,
-      data: chartData,
-    });
+    const data = result.rows || [];
+    const totalRevenue = data.reduce((sum, item) => sum + Number(item.amount_total || 0), 0);
+    return res.json({ success: true, total_revenue: totalRevenue, data: data });
   } catch (error) {
     console.error('Error generating revenue report:', error);
     return res.status(500).json({

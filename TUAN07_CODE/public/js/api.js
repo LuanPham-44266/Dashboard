@@ -147,6 +147,26 @@
     }
   }
 
+  async function updateOrder(orderId, orderPayload = {}) {
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(orderPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || 'Không thể cập nhật đơn hàng.');
+      }
+
+      return payload;
+    } catch (error) {
+      console.error('updateOrder failed:', error);
+      throw error;
+    }
+  } 
+
   async function updateOrderStatus(orderId, statusPayload = {}) {
     try {
       const response = await fetch(`/api/orders/${orderId}/status`, {
@@ -244,7 +264,7 @@
         throw new Error(payload.message || 'Không thể tải chi tiết đơn hàng.');
       }
 
-      return payload?.order || payload?.data || payload || {};
+      return payload;
     } catch (error) {
       console.error('fetchOrderDetails failed:', error);
       throw error;
@@ -342,7 +362,22 @@ async function createInvoice(orderId) {
       console.error('payInvoice failed:', error);
       throw error;
     }
-  }
+  } 
+
+  async function sendInvoiceEmail(invoiceId) {
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/send-email`, {
+        method: 'POST',
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Không thể gửi email hóa đơn.');
+      return payload;
+    } catch (error) {
+      console.error('sendInvoiceEmail failed:', error);
+      throw error;
+    }
+  } 
 
   window.Api = {
     fetchCustomers,
@@ -352,12 +387,17 @@ async function createInvoice(orderId) {
     fetchOrders,
     createProduct,
     createOrder,
+    updateOrder,
     updateOrderStatus,
     fetchRevenueReport,
     fetchRevenueData,
     exportInvoice,
     sendQuoteEmail,
     fetchOrderDetails,
+    createInvoice,
+    confirmInvoice,
+    payInvoice,
+    sendInvoiceEmail,
     deleteOrder,
   };
 })();

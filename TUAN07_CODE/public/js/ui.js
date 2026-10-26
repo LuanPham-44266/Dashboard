@@ -58,6 +58,8 @@
 
    const customerSelect = document.getElementById('customerSelect');
       if (customerSelect) customerSelect.value = ''; // Reset input
+      const customerPhone = document.getElementById('customerPhone');
+      if (customerPhone) customerPhone.value = ''; // Clear phone
       const customerList = document.getElementById('customer-list');
       if (customerList) {
         customerList.innerHTML = (Array.isArray(state.customers) ? state.customers : [])
@@ -114,64 +116,110 @@
     }
   }
 
-  function toggleOrderModalState(status, isNew = false, invoiceState = null) {
+  function toggleOrderModalState(orderStatus, isNew = false, invoiceStatus = null) {
     const confirmOrderBtn = document.getElementById('confirmOrderBtn'); 
     const confirmSaleBtn = document.getElementById('confirmSaleBtn'); 
     const markDoneBtn = document.getElementById('markDoneBtn'); 
     const addLineBtn = document.getElementById('addLineBtn'); 
     const btnSendQuote = document.getElementById('btn-send-quote');
     const deleteOrderBtn = document.getElementById('deleteOrderBtn');
+    const saveChangesBtn = document.getElementById('saveChangesBtn');
 
-    // Nút Invoice mới
     const createInvoiceBtn = document.getElementById('btn-create-invoice');
+    const btnExportInvoice = document.getElementById('btn-export-invoice'); 
     const confirmInvoiceBtn = document.getElementById('btn-confirm-invoice');
     const registerPaymentBtn = document.getElementById('btn-register-payment');
+    const invoiceStatusContainer = document.getElementById('invoiceStatusContainer');
+    const invoiceStatusText = document.getElementById('invoiceStatusText');
 
-    const normalizedStatus = String(status || 'draft').toLowerCase();
+    const normalizedStatus = String(orderStatus || 'draft').toLowerCase();
+    const isReadOnly = (normalizedStatus !== 'draft' && normalizedStatus !== 'pending');
 
-    // 1. Ẩn tất cả nút trước
-    if (confirmOrderBtn) confirmOrderBtn.classList.add('hidden');
-    if (confirmSaleBtn) confirmSaleBtn.classList.add('hidden');
-    if (markDoneBtn) markDoneBtn.classList.add('hidden');
-    if (btnSendQuote) btnSendQuote.classList.add('hidden');
-    if (deleteOrderBtn) deleteOrderBtn.classList.add('hidden');
-    if (addLineBtn) addLineBtn.classList.remove('hidden');
+    // Cập nhật Pipeline active state
+    document.querySelectorAll('#statusPipeline .pipeline-step').forEach(step => {
+      const stepState = step.dataset.state;
+      if (stepState === normalizedStatus) {
+        step.classList.add('active');
+      } else {
+        step.classList.remove('active');
+      }
+    });
 
-    if (createInvoiceBtn) createInvoiceBtn.classList.add('hidden');
-    if (confirmInvoiceBtn) confirmInvoiceBtn.classList.add('hidden');
-    if (registerPaymentBtn) registerPaymentBtn.classList.add('hidden');
-
-    const isReadOnly = (normalizedStatus === 'done' || normalizedStatus === 'sale' || normalizedStatus === 'processing' || normalizedStatus === 'canceled');
     document.querySelectorAll('#orderModal input, #orderModal select').forEach(el => {
       el.disabled = isReadOnly;
     });
 
-    // 2. Hiển thị nút theo trạng thái (Luồng Odoo)
-    if (isNew) {
-      if (confirmOrderBtn) confirmOrderBtn.classList.remove('hidden');
-    } else {
-      if (normalizedStatus === 'draft' || normalizedStatus === 'pending') {
-        if (confirmSaleBtn) confirmSaleBtn.classList.remove('hidden');
-        if (btnSendQuote) btnSendQuote.classList.remove('hidden');
-        if (deleteOrderBtn) deleteOrderBtn.classList.remove('hidden');
-      } 
-      else if (normalizedStatus === 'sale' || normalizedStatus === 'processing' || normalizedStatus === 'done') {
-        if (normalizedStatus === 'sale' || normalizedStatus === 'processing') {
-           if (markDoneBtn) markDoneBtn.classList.remove('hidden');
+    document.querySelectorAll('.remove-line-btn').forEach(btn => {
+      btn.style.display = isReadOnly ? 'none' : 'inline-block';
+    });
+
+    if (addLineBtn) {
+      if (!isReadOnly) addLineBtn.classList.remove('hidden');
+      else addLineBtn.classList.add('hidden');
+    }
+
+    if (saveChangesBtn) {
+      if (!isReadOnly && !isNew) saveChangesBtn.classList.remove('hidden');
+      else saveChangesBtn.classList.add('hidden');
+    }
+
+    if (confirmSaleBtn) {
+      if (normalizedStatus === 'draft' && !isNew) confirmSaleBtn.classList.remove('hidden');
+      else confirmSaleBtn.classList.add('hidden');
+    }
+
+    if (markDoneBtn) {
+      if (normalizedStatus === 'sale') markDoneBtn.classList.remove('hidden');
+      else markDoneBtn.classList.add('hidden');
+    }
+
+    if (confirmOrderBtn) {
+      if (isNew) confirmOrderBtn.classList.remove('hidden');
+      else confirmOrderBtn.classList.add('hidden');
+    }
+
+    if (btnSendQuote) {
+      if (!isReadOnly && !isNew) btnSendQuote.classList.remove('hidden');
+      else btnSendQuote.classList.add('hidden');
+    }
+
+    if (deleteOrderBtn) {
+      if (!isReadOnly && !isNew) deleteOrderBtn.classList.remove('hidden');
+      else deleteOrderBtn.classList.add('hidden');
+    }
+
+    // Logic Invoice
+    const btnSendInvoice = document.getElementById('btn-send-invoice');
+    
+    if (createInvoiceBtn) createInvoiceBtn.classList.add('hidden');
+    if (confirmInvoiceBtn) confirmInvoiceBtn.classList.add('hidden');
+    if (registerPaymentBtn) registerPaymentBtn.classList.add('hidden');
+    if (btnSendInvoice) btnSendInvoice.classList.add('hidden');
+    if (btnExportInvoice) btnExportInvoice.classList.add('hidden');
+
+    if (invoiceStatusContainer) {
+      invoiceStatusContainer.classList.remove('hidden');
+      if (!invoiceStatus) {
+        invoiceStatusText.textContent = 'Not Created';
+        invoiceStatusText.className = 'badge bg-secondary';
+        // Sửa lỗi: Chỉ hiện Create Invoice khi đơn ở trạng thái Sale hoặc Done
+        if ((normalizedStatus === 'sale' || normalizedStatus === 'done') && createInvoiceBtn) {
+            createInvoiceBtn.classList.remove('hidden');
         }
-        if (addLineBtn) addLineBtn.classList.add('hidden'); 
-        
-        // Logic Hóa đơn:
-        if (!invoiceState) {
-           if (createInvoiceBtn) createInvoiceBtn.classList.remove('hidden');
-        } else if (invoiceState === 'draft') {
-           if (confirmInvoiceBtn) confirmInvoiceBtn.classList.remove('hidden');
-        } else if (invoiceState === 'posted') {
-           if (registerPaymentBtn) registerPaymentBtn.classList.remove('hidden');
+      } else {
+        const invStatusStr = String(invoiceStatus).toLowerCase();
+        invoiceStatusText.textContent = invoiceStatus.toUpperCase();
+        if (invStatusStr === 'draft') {
+          invoiceStatusText.className = 'badge bg-warning';
+          if (confirmInvoiceBtn) confirmInvoiceBtn.classList.remove('hidden');
+        } else if (invStatusStr === 'posted') {
+          invoiceStatusText.className = 'badge bg-primary';
+          if (btnSendInvoice) btnSendInvoice.classList.remove('hidden');
+          if (registerPaymentBtn) registerPaymentBtn.classList.remove('hidden');
+        } else if (invStatusStr === 'paid') {
+          invoiceStatusText.className = 'badge bg-success';
+          if (btnExportInvoice) btnExportInvoice.classList.remove('hidden');
         }
-      } 
-      else {
-        if (addLineBtn) addLineBtn.classList.add('hidden');
       }
     }
   }
@@ -312,8 +360,10 @@
     try {
       const customerSelect = document.getElementById('customerSelect');
       const customerInputValue = customerSelect ? String(customerSelect.value).trim() : '';
+      const customerPhoneEl = document.getElementById('customerPhone');
+      const partnerPhone = customerPhoneEl ? String(customerPhoneEl.value).trim() : '';
       
-      const matchedCustomer = state.customers.find(c => c.name === customerInputValue);
+      const matchedCustomer = state.customers.find(c => c.name === customerInputValue || String(c.id) === customerInputValue);
       const partnerId = matchedCustomer ? Number(matchedCustomer.id) : 0;
       const partnerName = matchedCustomer ? '' : customerInputValue;
 
@@ -334,6 +384,7 @@
       const payload = {
         partner_id: partnerId,
         partner_name: partnerName,
+        partner_phone: partnerPhone,
         date_order: dateOrder,
         lines: lines.map((line) => ({
           product_id: Number(line.product_id),
@@ -759,11 +810,15 @@
 
       state.selectedOrderId = Number(orderId);
       const orderPayload = order.order || order;
-      const lines = Array.isArray(orderPayload.lines) ? orderPayload.lines : [];
+      const lines = Array.isArray(order.lines) ? order.lines : (Array.isArray(orderPayload.lines) ? orderPayload.lines : []);
 
       const customerSelect = document.getElementById('customerSelect');
       if (customerSelect) {
         customerSelect.value = orderPayload.customer_name || orderPayload.partner_name || orderPayload.partner_id || '';
+      }
+      const customerPhone = document.getElementById('customerPhone');
+      if (customerPhone) {
+        customerPhone.value = orderPayload.phone || orderPayload.customer_phone || '';
       }
 
       const orderDate = document.getElementById('orderDate');
@@ -785,6 +840,7 @@
           const priceInput = row.querySelector('.line-price');
           if (priceInput) priceInput.value = line.price_unit || line.price || 0;
           tbody.appendChild(row);
+          calculateSubtotalForRow(row);
           bindOrderLineCalculation(row);
         });
 
@@ -799,7 +855,8 @@
       if (modalTitle) modalTitle.textContent = 'Edit Order';
       updateTotals();
       
-      // Lấy trạng thái hóa đơn từ dữ liệu trả về (nếu có)
+      // Lấy thông tin hóa đơn từ dữ liệu trả về
+      state.currentInvoiceId = orderPayload.invoice_id || null;
       const invoiceState = orderPayload.invoice_state || null;
       toggleOrderModalState(orderPayload.state || 'draft', false, invoiceState);
     } catch (error) {
@@ -1327,15 +1384,8 @@
           const res = await window.Api?.createInvoice?.(state.selectedOrderId);
           showToast(res?.message || 'Tạo hóa đơn nháp thành công.', 'success');
           
-          // Lưu tạm ID hóa đơn vào state để dùng cho các bước sau
-          if (res?.invoice?.id) {
-             state.currentInvoiceId = res.invoice.id;
-             // Cập nhật lại UI modal (mô phỏng việc đổi state)
-             orderPayload = { state: 'sale', invoice_state: 'draft' }; // Giả lập dữ liệu
-             toggleOrderModalState('sale', false, 'draft');
-          }
-          
-          refreshOrdersList();
+          await refreshOrdersList();
+          if (state.selectedOrderId) openOrderDetail(state.selectedOrderId);
         } catch (error) {
           showToast(error?.message || 'Không thể tạo hóa đơn.', 'error');
         }
@@ -1356,8 +1406,7 @@
           const res = await window.Api?.confirmInvoice?.(invoiceId);
           showToast(res?.message || 'Xác nhận hóa đơn thành công.', 'success');
           
-          // Giả lập UI cập nhật
-          toggleOrderModalState('sale', false, 'posted');
+          if (state.selectedOrderId) openOrderDetail(state.selectedOrderId);
         } catch (error) {
           showToast(error?.message || 'Không thể xác nhận hóa đơn.', 'error');
         }
@@ -1378,12 +1427,72 @@
           const res = await window.Api?.payInvoice?.(invoiceId);
           showToast(res?.message || 'Thanh toán hóa đơn thành công.', 'success');
           
-          // Đóng modal hoặc ẩn hẳn các nút sau khi thanh toán xong
-          toggleOrderModalState('done', false, 'paid'); 
-          
+          if (state.selectedOrderId) openOrderDetail(state.selectedOrderId);
           if (typeof loadReportingData === 'function') loadReportingData(); 
         } catch (error) {
           showToast(error?.message || 'Không thể thanh toán hóa đơn.', 'error');
+        }
+      });
+    }
+
+    const btnSendInvoice = document.getElementById('btn-send-invoice');
+    if (btnSendInvoice) {
+      const newSendInvBtn = btnSendInvoice.cloneNode(true);
+      btnSendInvoice.parentNode.replaceChild(newSendInvBtn, btnSendInvoice);
+      newSendInvBtn.addEventListener('click', async () => {
+        const invoiceId = state.currentInvoiceId || state.selectedInvoiceId; 
+        if (!invoiceId) {
+           showToast('Không tìm thấy mã hóa đơn.', 'error');
+           return;
+        }
+        const email = prompt("Nhập email khách hàng để gửi hóa đơn:");
+        if (!email) return;
+        
+        try {
+          showToast('Đang gửi email hóa đơn...', 'success');
+          const res = await window.Api.sendInvoiceEmail(invoiceId);
+          showToast(res.message || 'Gửi email thành công', 'success');
+        } catch (error) {
+          showToast(error.message || 'Lỗi gửi email', 'error');
+        }
+      });
+    }
+
+    const saveChangesBtn = document.getElementById('saveChangesBtn');
+    if (saveChangesBtn) {
+      const newSaveBtn = saveChangesBtn.cloneNode(true);
+      saveChangesBtn.parentNode.replaceChild(newSaveBtn, saveChangesBtn);
+      newSaveBtn.addEventListener('click', async () => {
+        if (!state.selectedOrderId) return;
+        try {
+          const customerSelect = document.getElementById('customerSelect');
+          const customerInputValue = customerSelect ? String(customerSelect.value).trim() : '';
+          const customerPhoneEl = document.getElementById('customerPhone');
+          const partnerPhone = customerPhoneEl ? String(customerPhoneEl.value).trim() : '';
+
+          const matchedCustomer = state.customers.find(c => c.name === customerInputValue || String(c.id) === customerInputValue);
+          const partnerId = matchedCustomer ? Number(matchedCustomer.id) : 0;
+          const partnerName = matchedCustomer ? '' : customerInputValue;
+          const lines = getOrderLinesFromTable();
+
+          if (!lines.length) {
+            showToast('Đơn hàng cần ít nhất 1 sản phẩm.', 'error');
+            return;
+          }
+
+          const payload = {
+            partner_id: partnerId,
+            partner_name: partnerName,
+            partner_phone: partnerPhone,
+            lines: lines,
+          };
+
+          await window.Api.updateOrder(state.selectedOrderId, payload);
+          showToast('Cập nhật thay đổi thành công.', 'success');
+          refreshOrdersList();
+          openOrderDetail(state.selectedOrderId);
+        } catch (error) {
+          showToast(error?.message || 'Không thể lưu thay đổi.', 'error');
         }
       });
     }
@@ -1429,8 +1538,8 @@
 
   function renderRevenueReport(report = {}) {
     try {
-      const rows = Array.isArray(report?.data) ? report.data : [];
-      const totalValue = Number(report.total_revenue ?? rows.reduce((sum, item) => sum + Number(item.amount_total || item.amount || 0), 0));
+      const rows = Array.isArray(report?.data) ? report.data : (Array.isArray(report) ? report : []);
+      const totalValue = Number(report.total_revenue ?? rows.reduce((sum, item) => sum + Number(item.amount_total || 0), 0));
       
       const body = document.getElementById('reportingBody');
       const totalEl = document.getElementById('reportingTotalRevenue');
@@ -1454,11 +1563,11 @@
           
           return `
           <tr>
-            <td><strong>${item.order_name || item.name || `#${item.id}`}</strong></td>
-            <td>${item.customer_name || item.partner_name || 'Khách lẻ'}</td>
-            <td>${formatDate(item.date_order || item.created_at)}</td>
+            <td><strong>${item.order_name || `#${item.id}`}</strong></td>
+            <td>${item.customer_name || 'Khách lẻ'}</td>
+            <td>${formatDate(item.date_order)}</td>
             <td><span class="badge ${statusClass}">${statusLabel}</span></td>
-            <td class="text-end" style="font-weight: 600; color: #206bc4;">${formatMoney(item.amount_total || item.amount)}</td>
+            <td class="text-end" style="font-weight: 600; color: #206bc4;">${formatMoney(item.amount_total)}</td>
           </tr>
         `})
         .join('');

@@ -183,35 +183,39 @@ async function generateOrderName(client = null) {
 
 async function getOrderSummary(orderId) {
   const orderQuery = `
-    SELECT
-      so.id,
-      so.name AS order_name,
-      so.state,
-      so.date_order,
-      so.amount_untaxed,
-      so.amount_total,
-      so.partner_id,
-      rp.name AS customer_name,
-      rp.phone,
-      rp.email,
-      COUNT(sol.id) AS item_count
-    FROM sale_order so
-    INNER JOIN res_partner rp ON rp.id = so.partner_id
-    LEFT JOIN sale_order_line sol ON sol.order_id = so.id
-    WHERE so.id = $1
-    GROUP BY
-      so.id,
-      so.name,
-      so.state,
-      so.date_order,
-      so.amount_untaxed,
-      so.amount_total,
-      so.partner_id,
-      rp.name,
-      rp.phone,
-      rp.email;
-  `;
-
+      SELECT
+        so.id,
+        so.name AS order_name,
+        so.state,
+        so.date_order,
+        so.amount_untaxed,
+        so.amount_total,
+        so.partner_id,
+        rp.name AS customer_name,
+        rp.phone,
+        rp.email,
+        am.state AS invoice_state,
+        am.id AS invoice_id,
+        COUNT(sol.id) AS item_count
+      FROM sale_order so
+      INNER JOIN res_partner rp ON rp.id = so.partner_id
+      LEFT JOIN account_move am ON am.invoice_origin = so.name
+      LEFT JOIN sale_order_line sol ON sol.order_id = so.id
+      WHERE so.id = $1
+      GROUP BY
+        so.id,
+        so.name,
+        so.state,
+        so.date_order,
+        so.amount_untaxed,
+        so.amount_total,
+        so.partner_id,
+        rp.name,
+        rp.phone,
+        rp.email,
+        am.state,
+        am.id;
+    `;
   const linesQuery = `
     SELECT
       sol.id,
@@ -490,7 +494,7 @@ app.post('/api/orders', authRole(['Sale', 'Manager']), async (req, res) => {
     return res.status(400).json({ message: validationError });
   }
 
-  let { partner_id, partner_name, lines = [] } = payload;
+  let { partner_id, partner_name, partner_phone, lines = [] } = payload;
   const client = await pool.connect();
 
   try {
@@ -498,11 +502,18 @@ app.post('/api/orders', authRole(['Sale', 'Manager']), async (req, res) => {
 
     if (!Number(partner_id) && partner_name) {
       const trimmedName = String(partner_name).trim();
+      const trimmedPhone = String(partner_phone || '').trim();
       const insertCustomer = await client.query(
-        `INSERT INTO res_partner (name) VALUES ($1) RETURNING id;`,
-        [trimmedName]
+        `INSERT INTO res_partner (name, phone) VALUES ($1, $2) RETURNING id;`,
+        [trimmedName, trimmedPhone]
       );
       partner_id = insertCustomer.rows[0].id;
+    } else if (Number(partner_id) && partner_phone !== undefined) {
+      const trimmedPhone = String(partner_phone || '').trim();
+      await client.query(
+        `UPDATE res_partner SET phone = $1 WHERE id = $2;`,
+        [trimmedPhone, Number(partner_id)]
+      );
     }
 
     const orderName = await generateOrderName(client);
@@ -682,7 +693,7 @@ app.put('/api/orders/:id/status', authRole(['Sale', 'Manager']), async (req, res
 
 app.put('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) => {
   const { id } = req.params;
-  const { partner_id, state, lines } = req.body;
+  const { partner_id, partner_phone, state, lines } = req.body;
   const client = await pool.connect();
 
   try {
@@ -711,6 +722,13 @@ app.put('/api/orders/:id', authRole(['Sale', 'Manager']), async (req, res) => {
     if (partner_id !== undefined && !Number(nextPartnerId)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ message: 'Khách hàng không hợp lệ.' });
+    }
+
+    if (Number(nextPartnerId) && partner_phone !== undefined) {
+      await client.query(
+        `UPDATE res_partner SET phone = $1 WHERE id = $2;`,
+        [String(partner_phone || '').trim(), Number(nextPartnerId)]
+      );
     }
 
     let totalAmount = toNumber(currentOrder.amount_total, 0);
@@ -901,6 +919,26 @@ app.put('/api/invoices/:id/payment', authRole(['Accountant', 'Manager']), async 
     return res.json({ message: 'Đã thanh toán hóa đơn (paid)', invoice: result.rows[0] });
   } catch (error) {
     return res.status(500).json({ message: 'Lỗi khi thanh toán hóa đơn', error: error.message });
+  }
+});
+
+app.post('/api/invoices/:id/send-email', authRole(['Sale', 'Manager']), async (req, res) => {
+  try {
+    // Giả lập độ trễ mạng và gửi email thành công
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return res.json({ success: true, message: 'Đã gửi email hóa đơn PDF cho khách hàng thành công.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Lỗi gửi email hóa đơn.' });
+  }
+});
+
+app.post('/api/invoices/:id/send-email', authRole(['Sale', 'Manager']), async (req, res) => {
+  try {
+    // Giả lập độ trễ mạng và gửi email thành công
+    await new Promise(resolve => setTimeout(resolve, 800));
+    return res.json({ success: true, message: 'Đã gửi email hóa đơn PDF cho khách hàng thành công.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Lỗi gửi email hóa đơn.' });
   }
 });
 

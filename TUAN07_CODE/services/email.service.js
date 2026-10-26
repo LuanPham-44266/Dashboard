@@ -1,15 +1,15 @@
 const nodemailer = require('nodemailer');
 const { query } = require('../db');
 
-function buildQuoteHtml(quote, customer) {
-  const quoteItems = quote.items || [];
-  const itemRows = quoteItems
+function buildQuoteHtml(order, customer) {
+  const orderItems = order.items || [];
+  const itemRows = orderItems
     .map(
       (item) => `
         <tr>
           <td>${item.product_name || 'Sản phẩm'}</td>
           <td>${Number(item.quantity || 0)}</td>
-          <td>${Number(item.unit_price || 0).toLocaleString('vi-VN')} đ</td>
+          <td>${Number(item.price_unit || 0).toLocaleString('vi-VN')} đ</td>
           <td>${Number(item.line_total || 0).toLocaleString('vi-VN')} đ</td>
         </tr>
       `
@@ -19,7 +19,7 @@ function buildQuoteHtml(quote, customer) {
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; max-width: 760px; margin: 0 auto;">
       <div style="background: #0f172a; color: white; padding: 20px 24px; border-radius: 12px 12px 0 0;">
-        <h2 style="margin: 0;">Báo giá ${quote.quote_number || 'Q-' + quote.id}</h2>
+        <h2 style="margin: 0;">Báo giá ${order.order_name || 'SO-' + order.id}</h2>
       </div>
       <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px; background: #ffffff;">
         <p>Xin chào <strong>${customer?.name || 'Khách hàng'}</strong>,</p>
@@ -40,7 +40,7 @@ function buildQuoteHtml(quote, customer) {
         </table>
 
         <div style="margin-top: 20px; text-align: right;">
-          <p style="margin: 6px 0;"><strong>Tổng tiền:</strong> ${Number(quote.total_amount || 0).toLocaleString('vi-VN')} đ</p>
+          <p style="margin: 6px 0;"><strong>Tổng tiền:</strong> ${Number(order.amount_total || 0).toLocaleString('vi-VN')} đ</p>
         </div>
 
         <p style="margin-top: 24px;">Trân trọng,<br />Đội ngũ bán hàng</p>
@@ -49,16 +49,15 @@ function buildQuoteHtml(quote, customer) {
   `;
 }
 
-async function getQuoteDetail(quoteId) {
+async function getQuoteDetail(orderId) {
   const quoteResult = await query(
     `
-      SELECT q.id, q.quote_number, q.customer_id, q.created_by, q.quote_status, q.valid_until, q.notes, q.total_amount,
-             rp.name AS customer_name, rp.email AS customer_email
-      FROM quote q
-      LEFT JOIN res_partner rp ON rp.id = q.customer_id
-      WHERE q.id = $1;
+      SELECT so.id, so.name AS quote_number, so.partner_id AS customer_id, so.amount_total, rp.name AS customer_name, rp.email AS customer_email
+      FROM sale_order so
+      LEFT JOIN res_partner rp ON rp.id = so.partner_id
+      WHERE so.id = $1;
     `,
-    [quoteId]
+    [orderId]
   );
 
   if (!quoteResult.rows[0]) {
@@ -68,28 +67,30 @@ async function getQuoteDetail(quoteId) {
   const quote = quoteResult.rows[0];
   const itemsResult = await query(
     `
-      SELECT product_name, description, quantity, unit_price, line_total
-      FROM quote_item
-      WHERE quote_id = $1
-      ORDER BY id ASC;
+      SELECT pp.name AS product_name, '' AS description, sol.product_uom_qty AS quantity, sol.price_unit AS unit_price, sol.price_subtotal AS line_total
+      FROM sale_order_line sol
+      JOIN product_product pp ON pp.id = sol.product_id
+      WHERE sol.order_id = $1
+      ORDER BY sol.id ASC;
     `,
-    [quoteId]
+    [orderId]
   );
 
   return {
     ...quote,
+    total_amount: quote.amount_total,
     items: itemsResult.rows,
   };
 }
 
-async function sendQuoteEmail(quoteId, customerEmail) {
-  const quote = await getQuoteDetail(quoteId);
+async function sendQuoteEmail(orderId, customerEmail) {
+  const order = await getQuoteDetail(orderId);
 
-  if (!quote) {
-    throw new Error('Không tìm thấy báo giá để gửi email.');
+  if (!order) {
+    throw new Error('Không tìm thấy đơn hàng/báo giá để gửi email.');
   }
 
-  const emailAddress = String(customerEmail || quote.customer_email || '').trim();
+  const emailAddress = String(customerEmail || order.customer_email || '').trim();
   if (!emailAddress) {
     throw new Error('Email khách hàng không hợp lệ hoặc chưa có trong dữ liệu.');
   }
@@ -109,8 +110,8 @@ async function sendQuoteEmail(quoteId, customerEmail) {
   const mailOptions = {
     from: process.env.SMTP_FROM || 'noreply@company.local',
     to: emailAddress,
-    subject: `Báo giá ${quote.quote_number || quote.id}`,
-    html: buildQuoteHtml(quote, { name: quote.customer_name || 'Khách hàng' }),
+    subject: `Báo giá ${order.order_name || order.id}`,
+    html: buildQuoteHtml(order, { name: order.customer_name || 'Khách hàng' }),
   };
 
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {

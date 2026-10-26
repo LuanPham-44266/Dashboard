@@ -182,46 +182,6 @@
           </div>
         </div>
 
-          <div class="dashboard-stats" id="reportingStats">
-            <div class="stat-card accent">
-              <span class="stat-label">Total Revenue</span>
-              <strong class="stat-value" id="reportingTotalRevenue">0 đ</strong>
-            </div>
-          </div>
-
-          <div class="toolbar-search-row" style="margin-bottom: 16px;">
-            <div class="search-filter-group">
-              <div class="search-box">
-                <label for="reportingStartDate" class="form-label mb-0">From</label>
-                <input type="date" id="reportingStartDate" class="form-control" />
-              </div>
-              <div class="search-box">
-                <label for="reportingEndDate" class="form-label mb-0">To</label>
-                <input type="date" id="reportingEndDate" class="form-control" />
-              </div>
-              <div class="search-box">
-                <button class="btn btn-primary" id="btn-reporting-filter" type="button">Filter</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="card sales-card">
-            <div class="card-body p-0">
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table sales-table" id="reportingTable">
-                  <thead>
-                    <tr>
-                      <th>Month</th>
-                      <th>Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody id="reportingBody"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div id="productsView" class="screen-view hidden">
           <div class="page-toolbar">
             <div class="toolbar-title-group">
@@ -324,12 +284,23 @@
             <div class="pipeline-step" data-state="done">Done</div>
           </div>
 
+          <div id="invoiceStatusContainer" class="hidden" style="margin-bottom: 16px; padding: 12px 14px; background: rgba(34, 51, 72, 0.4); border: 1px solid var(--line); border-radius: 12px; display: flex; align-items: center; gap: 8px;">
+            <span style="color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;">Invoice Status:</span>
+            <span id="invoiceStatusText" class="badge badge-soft">Not Created</span>
+          </div>
+
           <div class="form-grid">
             <div class="field-group w-50">
               <label for="customerSelect">Customer</label>
               <input type="text" id="customerSelect" list="customer-list" placeholder="Chọn hoặc nhập tên khách hàng..." />
               <datalist id="customer-list"></datalist>
             </div>
+            <div class="field-group w-50">
+              <label for="customerPhone">Phone</label>
+              <input type="text" id="customerPhone" placeholder="Nhập số điện thoại..." />
+            </div>
+          </div>
+          <div class="form-grid">
             <div class="field-group w-50">
               <label for="orderDate">Order Date</label>
               <input type="datetime-local" id="orderDate" />
@@ -358,7 +329,7 @@
             </div>
           </div>
 
-          <div class="form-footer">
+          <div class="form-footer">           
             <div class="totals-box">
               <div class="total-row">
                 <span>Untaxed</span>
@@ -372,6 +343,7 @@
 
             <div class="action-group">
               <button type="button" class="btn btn-secondary btn-soft hidden" id="btn-send-quote">Send Quote</button>
+              <button type="button" class="btn btn-info hidden" id="btn-send-invoice">Send Invoice</button>
               <button type="button" class="btn btn-primary-dark hidden" id="btn-export-invoice">Export Invoice</button>
 
               <!-- 3 nút Hóa đơn mới thêm vào -->
