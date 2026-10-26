@@ -63,7 +63,6 @@
 
             <div class="toolbar-actions">
               <button class="btn btn-dark" id="btn-new-order">New</button>
-              <button class="btn btn-secondary btn-soft" id="btn-import-order">Import</button>
               <button class="btn btn-secondary btn-soft" id="btn-order-filters">Filters</button>
             </div>
           </div>
@@ -98,8 +97,6 @@
               </div>
             </div>
             <div class="toolbar-right-tools">
-              <button class="btn btn-outline-light" id="btn-reporting" type="button">Reporting</button>
-              <button class="btn btn-outline-light" id="btn-revenue" type="button">Revenue</button>
               <button class="btn btn-primary-dark" id="btn-export" type="button">Export</button>
             </div>
           </div>
@@ -192,22 +189,11 @@
             <div class="toolbar-actions">
               <button class="btn btn-dark" id="btn-new-product">New Product</button>
 
-              <div class="custom-dropdown">
-                <button
-                  class="btn btn-secondary btn-soft dropdown-trigger dropdown-toggle"
-                  id="productDropdownTrigger"
-                  type="button"
-                  aria-expanded="false"
-                  data-bs-toggle="dropdown"
-                  aria-haspopup="true"
-                >
-                  More
-                </button>
-                <div class="custom-dropdown-menu hidden" id="productDropdownMenu">
-                  <a href="#" class="dropdown-item" id="btn-import-product">Import</a>
-                  <a href="#" class="dropdown-item" id="btn-export-product">Export</a>
-                </div>
-              </div>
+              
+                
+                  <button class="btn btn-secondary btn-soft" id="btn-import-product">Import</button>
+                  <button class="btn btn-secondary btn-soft" id="btn-export-product">Export</button>
+         
 
               <input type="file" id="file-import-input" accept=".xlsx, .xls" style="display: none;" />
             </div>

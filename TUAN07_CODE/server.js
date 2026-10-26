@@ -1,4 +1,4 @@
-
+const ExcelJS = require('exceljs');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -448,6 +448,172 @@ app.get('/api/orders', authRole(['Sale', 'Accountant', 'Manager']), async (req, 
       message: 'Lỗi khi truy xuất danh sách đơn hàng',
       error: error.message,
     });
+  }
+});
+
+// ==========================================
+// 1. API EXPORT SALE ORDERS RA EXCEL CHUẨN FORMAT
+// ==========================================
+app.get('/api/orders/export', authRole(['Sale', 'Manager']), async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        so.id,
+        so.name AS order_number, 
+        so.date_order, 
+        so.state AS order_status, 
+        so.amount_total,
+        rp.name AS customer_name,
+        rp.phone AS customer_phone
+      FROM sale_order so
+      LEFT JOIN res_partner rp ON rp.id = so.partner_id
+      ORDER BY so.id DESC
+    `);
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Danh Sách Đơn Hàng');
+
+    // 1. Cấu hình cột và độ rộng
+    worksheet.columns = [
+      { header: 'Mã Đơn Hàng', key: 'order_number', width: 18 },
+      { header: 'Khách Hàng', key: 'customer_name', width: 30 },
+      { header: 'Số Điện Thoại', key: 'customer_phone', width: 18 },
+      { header: 'Ngày Đặt', key: 'date_order', width: 20 },
+      { header: 'Trạng Thái', key: 'order_status', width: 15 },
+      { header: 'Tổng Tiền (VNĐ)', key: 'amount_total', width: 25 }
+    ];
+
+    // 2. Đổ dữ liệu vào bảng
+    result.rows.forEach(row => {
+      worksheet.addRow({
+        order_number: row.order_number || '',
+        customer_name: row.customer_name || '',
+        customer_phone: row.customer_phone || '',
+        date_order: row.date_order ? new Date(row.date_order).toLocaleString('vi-VN') : '',
+        order_status: (row.order_status || '').toUpperCase(),
+        amount_total: Number(row.amount_total || 0)
+      });
+    });
+
+    // 3. Format UI/UX cho Excel
+    // - In đậm và tô nền xám cho Header
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    
+    // - Format cột Tổng Tiền (cột số 6) thành định dạng tiền tệ có dấu phẩy phân cách
+    worksheet.getColumn(6).numFmt = '#,##0';
+    // - Căn giữa cột Mã đơn, SĐT, Trạng thái
+    worksheet.getColumn(1).alignment = { horizontal: 'center' };
+    worksheet.getColumn(3).alignment = { horizontal: 'center' };
+    worksheet.getColumn(5).alignment = { horizontal: 'center' };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Danh_sach_don_hang.xlsx"');
+
+    await workbook.xlsx.write(res);
+    return res.end();
+  } catch (err) {
+    console.error(' Export Orders Error:', err);
+    return res.status(500).json({ success: false, message: 'Lỗi xuất dữ liệu đơn hàng: ' + err.message });
+  }
+});
+// ==========================================
+// API IMPORT SẢN PHẨM TỪ FILE EXCEL (RAM BUFFER)
+// ==========================================
+app.post('/api/products/import', authRole(['Manager']), upload.single('file'), async (req, res) => {
+  try {
+    // Với memoryStorage, dữ liệu file nằm ở req.file.buffer
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'Vui lòng chọn file Excel.' });
+    }
+
+    // 1. Dùng thư viện XLSX đọc file trực tiếp từ Buffer trên RAM
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    
+    // 2. Chuyển đổi dữ liệu Sheet thành mảng JSON
+    const data = XLSX.utils.sheet_to_json(sheet);
+    
+    if (!data || data.length === 0) {
+      return res.status(400).json({ success: false, message: 'File Excel không có dữ liệu.' });
+    }
+
+    let successCount = 0;
+
+    // 3. Lặp qua từng dòng và lưu vào Database
+    for (const row of data) {
+      // Hỗ trợ đọc tên cột linh hoạt
+      const name = row['Tên Sản Phẩm'] || row['Tên sản phẩm'] || row['name'];
+      const price = row['Đơn Giá'] || row['Đơn giá'] || row['list_price'] || 0;
+
+      if (name) {
+        await query(
+          `INSERT INTO product_product (name, list_price) VALUES ($1, $2)`, 
+          [name, Number(price)]
+        );
+        successCount++;
+      }
+    }
+
+    return res.json({ 
+      success: true, 
+      message: `Đã import thành công ${successCount} sản phẩm vào hệ thống.` 
+    });
+
+  } catch (error) {
+    console.error(' Lỗi Import Sản Phẩm:', error);
+    return res.status(500).json({ success: false, message: 'Lỗi hệ thống khi import file: ' + error.message });
+  }
+});
+
+// ==========================================
+// 2. API EXPORT PRODUCTS RA EXCEL CHUẨN FORMAT
+// ==========================================
+app.get('/api/products/export', authRole(['Sale', 'Manager']), async (req, res) => {
+  try {
+    let result;
+    try {
+      result = await query(`SELECT id, name, list_price FROM product_product ORDER BY id ASC`);
+    } catch (e) {
+      result = await query(`SELECT id, name, lst_price AS list_price FROM product_product ORDER BY id ASC`);
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Danh Mục Sản Phẩm');
+
+    worksheet.columns = [
+      { header: 'Mã SP', key: 'id', width: 12 },
+      { header: 'Tên Sản Phẩm', key: 'name', width: 45 },
+      { header: 'Đơn Giá (VNĐ)', key: 'list_price', width: 25 }
+    ];
+
+    result.rows.forEach(row => {
+      worksheet.addRow({
+        id: row.id,
+        name: row.name || '',
+        list_price: Number(row.list_price || 0)
+      });
+    });
+
+    // Format UI/UX
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    
+    // Format tiền tệ cho cột Đơn giá (cột số 3)
+    worksheet.getColumn(3).numFmt = '#,##0';
+    worksheet.getColumn(1).alignment = { horizontal: 'center' };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Danh_sach_san_pham.xlsx"');
+
+    await workbook.xlsx.write(res);
+    return res.end();
+  } catch (err) {
+    console.error(' Export Products Error:', err);
+    return res.status(500).json({ success: false, message: 'Lỗi xuất dữ liệu sản phẩm: ' + err.message });
   }
 });
 
@@ -932,13 +1098,68 @@ app.post('/api/invoices/:id/send-email', authRole(['Sale', 'Manager']), async (r
   }
 });
 
-app.post('/api/invoices/:id/send-email', authRole(['Sale', 'Manager']), async (req, res) => {
+
+
+// ==========================================
+// 1. API EXPORT SALE ORDERS RA EXCEL (CSV)
+// ==========================================
+app.get('/api/orders/export', async (req, res) => {
   try {
-    // Giả lập độ trễ mạng và gửi email thành công
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return res.json({ success: true, message: 'Đã gửi email hóa đơn PDF cho khách hàng thành công.' });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Lỗi gửi email hóa đơn.' });
+    const result = await query(`
+      SELECT 
+        so.name AS order_number, 
+        rp.name AS customer_name, 
+        rp.phone AS customer_phone,
+        so.date_order, 
+        so.state AS order_status, 
+        so.amount_total
+      FROM sale_order so
+      LEFT JOIN res_partner rp ON rp.id = so.partner_id
+      ORDER BY so.id DESC
+    `);
+
+    // \uFEFF là UTF-8 BOM để Excel hiển thị đúng tiếng Việt có dấu
+    let csv = '\uFEFFMã đơn hàng,Khách hàng,Số điện thoại,Ngày đặt,Trạng thái,Tổng tiền (Đồng)\n';
+
+    result.rows.forEach(row => {
+      const dateStr = row.date_order ? new Date(row.date_order).toLocaleDateString('vi-VN') : '';
+      const line = `"${row.order_number || ''}","${row.customer_name || ''}","${row.customer_phone || ''}","${dateStr}","${row.order_status || ''}","${row.amount_total || 0}"`;
+      csv += line + '\n';
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="Danh_sach_don_hang.csv"');
+    return res.status(200).send(csv);
+  } catch (err) {
+    console.error('Export Orders Error:', err);
+    return res.status(500).json({ error: 'Lỗi xuất dữ liệu đơn hàng' });
+  }
+});
+
+// ==========================================
+// 2. API EXPORT PRODUCTS RA EXCEL (CSV)
+// ==========================================
+app.get('/api/products/export', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT id, name, lst_price 
+      FROM product_product 
+      ORDER BY id ASC
+    `);
+
+    let csv = '\uFEFFMã sản phẩm,Tên sản phẩm,Đơn giá (Đồng)\n';
+
+    result.rows.forEach(row => {
+      const line = `"${row.id}","${row.name || ''}","${row.lst_price || 0}"`;
+      csv += line + '\n';
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="Danh_sach_san_pham.csv"');
+    return res.status(200).send(csv);
+  } catch (err) {
+    console.error('Export Products Error:', err);
+    return res.status(500).json({ error: 'Lỗi xuất dữ liệu sản phẩm' });
   }
 });
 

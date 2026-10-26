@@ -1102,6 +1102,53 @@
     }
   }
 
+  async function downloadFileWithAuth(url, defaultFilename) {
+  try {
+    // Quét lấy Token từ window.Auth hoặc các key lưu trữ
+    const rawToken = window.Auth?.getToken?.() || 
+                     localStorage.getItem('token') || 
+                     localStorage.getItem('jwt_token') || 
+                     localStorage.getItem('accessToken');
+
+    if (!rawToken) {
+      showToast('Phiên đăng nhập hết hạn. Vui lòng Logout và Login lại!', 'error');
+      return;
+    }
+
+    // Đảm bảo format đúng chuẩn Bearer Header
+    const authHeader = rawToken.startsWith('Bearer ') ? rawToken : `Bearer ${rawToken}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': authHeader
+      }
+    });
+
+    if (response.status === 401) {
+      showToast('Token xác thực hết hạn (401). Vui lòng Logout và Login lại!', 'error');
+      return;
+    }
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Không thể xuất file dữ liệu.');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = defaultFilename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    showToast(`Tải xuống ${defaultFilename} thành công!`, 'success');
+  } catch (err) {
+    showToast(`Lỗi xuất file: ${err.message}`, 'error');
+  }
+}
   function bindActions() {
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
@@ -1138,9 +1185,20 @@
       btnRevenueRefresh.addEventListener('click', handleReporting);
     }
 
-    const btnExport = document.getElementById('btn-export');
-    if (btnExport) {
-      btnExport.addEventListener('click', handleExport);
+    // ==========================================
+    // 1. CHUẨN HÓA NÚT EXPORT ORDERS (SALE ORDERS)
+    // ==========================================
+    // Bắt cả 2 ID possible ('btn-export-orders' hoặc 'btn-export') để tránh lệch ID HTML
+    const btnExportOrders = document.getElementById('btn-export-orders') || document.getElementById('btn-export');
+    if (btnExportOrders) {
+      const newExportOrdersBtn = btnExportOrders.cloneNode(true);
+      btnExportOrders.parentNode.replaceChild(newExportOrdersBtn, btnExportOrders);
+
+      newExportOrdersBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        showToast('Đang tải xuống danh sách đơn hàng...', 'info');
+        downloadFileWithAuth('/api/orders/export', 'Danh_sach_don_hang.xlsx');
+      });
     }
 
     const btnSendQuote = document.getElementById('btn-send-quote');
@@ -1218,7 +1276,6 @@
     const importOrderBtn = document.getElementById('btn-import-order');
     if (importOrderBtn) {
       importOrderBtn.addEventListener('click', () => {
-        console.log('Import clicked');
         showToast('Import clicked', 'success');
       });
     }
@@ -1277,15 +1334,87 @@
       });
     }
 
-    const productDropdownTrigger = document.getElementById('productDropdownTrigger');
-    const productDropdownMenu = document.getElementById('productDropdownMenu');
-    if (productDropdownTrigger && productDropdownMenu) {
-      productDropdownTrigger.addEventListener('click', (event) => {
-        event?.preventDefault?.();
-        const isOpen = productDropdownMenu.classList.contains('show');
-        productDropdownMenu.classList.toggle('show', !isOpen);
-        productDropdownMenu.classList.toggle('hidden', isOpen);
-        productDropdownTrigger.setAttribute('aria-expanded', String(!isOpen));
+    // ==========================================
+    // 2. CHUẨN HÓA NÚT IMPORT/EXPORT PRODUCTS
+    // ==========================================
+    const btnImportProduct = document.getElementById('btn-import-product');
+    const btnExportProduct = document.getElementById('btn-export-product');
+    const fileImportInput = document.getElementById('file-import-input');
+
+    if (btnImportProduct) {
+      btnImportProduct.classList.remove('hidden');
+      btnImportProduct.style.display = 'inline-block';
+
+      const newImportBtn = btnImportProduct.cloneNode(true);
+      btnImportProduct.parentNode.replaceChild(newImportBtn, btnImportProduct);
+
+      newImportBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const inputEl = document.getElementById('file-import-input');
+        if (inputEl) {
+          inputEl.value = '';
+          inputEl.click();
+        }
+      });
+    }
+
+    if (btnExportProduct) {
+      btnExportProduct.classList.remove('hidden');
+      btnExportProduct.style.display = 'inline-block';
+
+      const newExportBtn = btnExportProduct.cloneNode(true);
+      btnExportProduct.parentNode.replaceChild(newExportBtn, btnExportProduct);
+
+      newExportBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        showToast('Đang tải xuống danh sách sản phẩm...', 'info');
+        downloadFileWithAuth('/api/products/export', 'Danh_sach_san_pham.xlsx');
+      });
+    }
+
+    if (fileImportInput) {
+      fileImportInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        showToast(`Đang xử lý tải lên file "${file.name}"...`, 'info');
+        
+        // Tạo Form Data chứa file
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Lấy Token xác thực
+        const token = window.Auth?.getToken?.() || localStorage.getItem('token') || localStorage.getItem('jwt_token');
+
+        try {
+          const response = await fetch('/api/products/import', {
+            method: 'POST',
+            headers: {
+              'Authorization': token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : ''
+            },
+            body: formData
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            showToast(result.message, 'success');
+            
+            // Render lại danh sách sản phẩm mới
+            const newProducts = await window.Api?.fetchProducts?.();
+            if (newProducts) {
+              state.products = Array.isArray(newProducts) ? newProducts : [];
+              if (typeof renderProducts === 'function') renderProducts(state.products);
+            }
+          } else {
+            showToast(result.message || 'Lỗi import file', 'error');
+          }
+        } catch (err) {
+          showToast('Lỗi kết nối máy chủ khi import', 'error');
+        } finally {
+          // Reset thẻ input để có thể chọn lại chính file đó ở lần sau
+          e.target.value = '';
+        }
       });
     }
 
@@ -1303,7 +1432,6 @@
     });
 
     bindManualDropdowns();
-    attachProductDropdownHandlers();
     bindReportingDateFilters();
 
     const addLineBtn = document.getElementById('addLineBtn');
@@ -1373,6 +1501,7 @@
         }
       });
     }
+
     // --- MODULE HÓA ĐƠN ---
     const btnCreateInvoice = document.getElementById('btn-create-invoice');
     if (btnCreateInvoice) {
@@ -1496,7 +1625,7 @@
         }
       });
     }
-  }
+}
 
   async function init() {
     if (!window.Auth?.requireAuth?.()) return;

@@ -1,4 +1,6 @@
 const PDFDocument = require('pdfkit');
+const path = require('path');
+const fs = require('fs');
 const { query } = require('../db');
 
 async function getOrderInvoiceData(orderId) {
@@ -13,7 +15,7 @@ async function getOrderInvoiceData(orderId) {
       rp.phone AS customer_phone, 
       am.name AS invoice_name, 
       am.state AS invoice_status, 
-      am.created_at AS invoice_date 
+      so.date_order AS invoice_date 
       FROM sale_order so LEFT JOIN res_partner rp ON rp.id = so.partner_id 
       LEFT JOIN account_move am ON am.invoice_origin = so.name 
       WHERE so.id = $1;
@@ -57,6 +59,12 @@ async function generateInvoicePDF(orderId) {
   const { order, items } = details;
   const doc = new PDFDocument({ margin: 50 });
   const chunks = [];
+
+  // Nối đường dẫn đến font Arial của Windows
+  const fontPath = 'C:\\Windows\\Fonts\\arial.ttf';
+  if (fs.existsSync(fontPath)) {
+    doc.font(fontPath); // Set font mặc định toàn văn bản
+  }
 
   doc.on('data', (chunk) => chunks.push(chunk));
 
