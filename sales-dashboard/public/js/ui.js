@@ -169,8 +169,15 @@
     }
 
     if (markDoneBtn) {
-      if (normalizedStatus === 'sale') markDoneBtn.classList.remove('hidden');
-      else markDoneBtn.classList.add('hidden');
+      // Logic mới: Chỉ Sale hoặc Manager mới thấy, VÀ đơn ở trạng thái 'sale', VÀ hóa đơn đã 'paid'
+      const canMarkDone = ['Sale', 'Manager'].includes(state.role);
+      const isInvoicePaid = String(invoiceStatus).toLowerCase() === 'paid';
+      
+      if (canMarkDone && normalizedStatus === 'sale' && isInvoicePaid) {
+        markDoneBtn.classList.remove('hidden');
+      } else {
+        markDoneBtn.classList.add('hidden');
+      }
     }
 
     if (confirmOrderBtn) {
@@ -199,23 +206,31 @@
 
     if (invoiceStatusContainer) {
       invoiceStatusContainer.classList.remove('hidden');
+      
+      // Khai báo biến kiểm tra quyền Kế toán hoặc Quản lý
+      const canManageInvoice = ['Accountant', 'Manager'].includes(state.role);
+
       if (!invoiceStatus) {
         invoiceStatusText.textContent = 'Not Created';
         invoiceStatusText.className = 'badge bg-secondary';
-        // Sửa lỗi: Chỉ hiện Create Invoice khi đơn ở trạng thái Sale hoặc Done
-        if ((normalizedStatus === 'sale' || normalizedStatus === 'done') && createInvoiceBtn) {
+        
+        // Điều kiện mới: Đơn hàng ở trạng thái Sale/Done VÀ user có quyền kế toán
+        if (canManageInvoice && (normalizedStatus === 'sale' || normalizedStatus === 'done') && createInvoiceBtn) {
             createInvoiceBtn.classList.remove('hidden');
         }
       } else {
         const invStatusStr = String(invoiceStatus).toLowerCase();
         invoiceStatusText.textContent = invoiceStatus.toUpperCase();
+        
         if (invStatusStr === 'draft') {
           invoiceStatusText.className = 'badge bg-warning';
-          if (confirmInvoiceBtn) confirmInvoiceBtn.classList.remove('hidden');
+          // Chỉ Kế toán/Quản lý mới được Confirm
+          if (canManageInvoice && confirmInvoiceBtn) confirmInvoiceBtn.classList.remove('hidden');
         } else if (invStatusStr === 'posted') {
           invoiceStatusText.className = 'badge bg-primary';
           if (btnSendInvoice) btnSendInvoice.classList.remove('hidden');
-          if (registerPaymentBtn) registerPaymentBtn.classList.remove('hidden');
+          // Chỉ Kế toán/Quản lý mới được Register Payment
+          if (canManageInvoice && registerPaymentBtn) registerPaymentBtn.classList.remove('hidden');
         } else if (invStatusStr === 'paid') {
           invoiceStatusText.className = 'badge bg-success';
           if (btnExportInvoice) btnExportInvoice.classList.remove('hidden');
@@ -620,7 +635,8 @@
 
     const tabOrders = document.getElementById('tab-orders');
     if (tabOrders) {
-      tabOrders.style.display = normalizedRole === 'Accountant' ? 'none' : '';
+      // Cho phép tất cả các Role (bao gồm cả Accountant) đều thấy được tab Orders
+      tabOrders.style.display = ''; 
     }
 
     const revenueCard = document.getElementById('revenueStatCard');
@@ -628,13 +644,8 @@
       revenueCard.style.display = ['Accountant', 'Manager'].includes(normalizedRole) ? '' : 'none';
     }
 
-    if (normalizedRole === 'Sale') {
-      setTabActive('tab-orders');
-    } else if (normalizedRole === 'Accountant') {
-      setTabActive('tab-reporting');
-    } else {
-      setTabActive('tab-orders');
-    }
+    // Mặc định đưa tất cả các Role vào màn hình danh sách Đơn hàng khi vừa đăng nhập
+    setTabActive('tab-orders');
   }
 
   function formatMoney(value) {
