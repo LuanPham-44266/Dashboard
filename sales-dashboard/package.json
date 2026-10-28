@@ -1,5 +1,5 @@
 {
-  "name": "tuan04-sale-demo",
+  "name": "sales-dashboard",
   "version": "1.0.0",
   "description": "Tabler + Express + PostgreSQL demo for Sale module",
   "main": "server.js",

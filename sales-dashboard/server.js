@@ -1101,7 +1101,7 @@ app.post('/api/invoices/:id/send-email', authRole(['Sale', 'Manager']), async (r
 
 
 // ==========================================
-// 1. API EXPORT SALE ORDERS RA EXCEL (CSV)
+/* 1. API EXPORT SALE ORDERS RA EXCEL (CSV)
 // ==========================================
 app.get('/api/orders/export', async (req, res) => {
   try {
@@ -1138,7 +1138,7 @@ app.get('/api/orders/export', async (req, res) => {
 
 // ==========================================
 // 2. API EXPORT PRODUCTS RA EXCEL (CSV)
-// ==========================================
+ ==========================================
 app.get('/api/products/export', async (req, res) => {
   try {
     const result = await query(`
@@ -1162,7 +1162,7 @@ app.get('/api/products/export', async (req, res) => {
     return res.status(500).json({ error: 'Lỗi xuất dữ liệu sản phẩm' });
   }
 });
-
+*/
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
 });
